@@ -1,0 +1,15 @@
+{
+  "name": "open-dgp-api",
+  "version": "0.1.0",
+  "description": "Backend para coleta, estruturação e busca semântica de dados de grupos de pesquisa do DGP/CNPq.",
+  "scripts": {
+    "api:build": "npm --prefix apps/api run build",
+    "api:dev": "npm --prefix apps/api run start:dev",
+    "api:test": "npm --prefix apps/api run test",
+    "langchain:build": "npm --prefix apps/langchain run build",
+    "langchain:dev": "npm --prefix apps/langchain run start:dev",
+    "langchain:start": "npm --prefix apps/langchain run start"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
