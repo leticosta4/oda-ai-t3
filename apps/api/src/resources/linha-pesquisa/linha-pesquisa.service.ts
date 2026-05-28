@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { UUID } from '@/common/types/uuid.type';
+import type { UUID } from "node:crypto";
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateLinhaPesquisaDto } from './dto/create-linha-pesquisa.dto';
 import { UpdateLinhaPesquisaDto } from './dto/update-linha-pesquisa.dto';

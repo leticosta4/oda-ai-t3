@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { UUID } from '@/common/types/uuid.type';
+import type { UUID } from "node:crypto";
 import { CreateProducoeDto } from './dto/create-producoe.dto';
 import { UpdateProducoeDto } from './dto/update-producoe.dto';
 

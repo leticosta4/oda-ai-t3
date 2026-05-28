@@ -8,7 +8,7 @@ import {
   Delete,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import type { UUID } from '@/common/types/uuid.type';
+import type { UUID } from "node:crypto";
 import { LinhaPesquisaService } from './linha-pesquisa.service';
 import { CreateLinhaPesquisaDto } from './dto/create-linha-pesquisa.dto';
 import { UpdateLinhaPesquisaDto } from './dto/update-linha-pesquisa.dto';
