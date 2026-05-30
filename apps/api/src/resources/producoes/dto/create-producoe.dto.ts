@@ -7,37 +7,27 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsUrl,
   IsUUID,
-  Max,
-  MaxLength,
-  Min,
-  MinLength,
   ValidateNested,
 } from 'class-validator';
 
 export class CreateProducaoAutorDto {
   @IsUUID()
-  pesquisadorId: string;
+  pesquisadorId!: string;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
   ordemAutoria?: number;
 }
 
 export class CreateProducoeDto {
   @IsString()
-  @MinLength(2)
-  @MaxLength(500)
-  titulo: string;
+  titulo!: string;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1500)
-  @Max(new Date().getFullYear())
   ano?: number;
 
   @IsOptional()
@@ -46,17 +36,14 @@ export class CreateProducoeDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(255)
   doi?: string;
 
   @IsOptional()
-  @IsUrl({ require_protocol: true })
-  @MaxLength(2048)
+  @IsString()
   url?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(255)
   veiculo?: string;
 
   @IsOptional()
@@ -65,6 +52,7 @@ export class CreateProducoeDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayUnique((autor: CreateProducaoAutorDto) => autor.pesquisadorId)
   @ValidateNested({ each: true })
   @Type(() => CreateProducaoAutorDto)
   autores?: CreateProducaoAutorDto[];

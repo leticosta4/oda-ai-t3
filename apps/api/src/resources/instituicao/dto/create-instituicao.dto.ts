@@ -10,12 +10,12 @@ export class CreateInstituicaoDto {
   @IsString()
   @MinLength(2)
   @MaxLength(255)
-  nome: string;
+  nome!: string;
 
   @IsString()
   @MinLength(2)
   @MaxLength(30)
-  sigla: string;
+  sigla!: string;
 
   @IsOptional()
   @IsUUID()

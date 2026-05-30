@@ -3,25 +3,25 @@ import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreatePesquisadoreDto } from './dto/create-pesquisadore.dto';
 import { UpdatePesquisadoreDto } from './dto/update-pesquisadore.dto';
-
+import { UUID } from 'node:crypto'; 
 const PESQUISADORES_LIST_CACHE_KEY = 'pesquisadores:list';
 
 @Injectable()
 export class PesquisadoresService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prismaService: PrismaService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
 
   async create(createPesquisadoreDto: CreatePesquisadoreDto) {
     await this.cacheManager.del(PESQUISADORES_LIST_CACHE_KEY);
-    return 'This action adds a new pesquisadore';
+    return await this.prismaService.pesquisador.create({data: createPesquisadoreDto})
   }
 
   async findAll() {
     return this.cacheManager.wrap(PESQUISADORES_LIST_CACHE_KEY, () =>
-      this.prisma.pesquisador.findMany({
+      this.prismaService.pesquisador.findMany({
         omit: {
           criadoEm: true,
           atualizadoEm: true,
@@ -30,17 +30,17 @@ export class PesquisadoresService {
     );
   }
 
-  findOne(id: string) {
-    return `This action returns a #${id} pesquisadore`;
+  findOne(id: UUID) {
+    return this.prismaService.pesquisador.findUnique({ where: { id: id}})
   }
 
-  async update(id: string, updatePesquisadoreDto: UpdatePesquisadoreDto) {
+  async update(id: UUID, updatePesquisadoreDto: UpdatePesquisadoreDto) {
     await this.cacheManager.del(PESQUISADORES_LIST_CACHE_KEY);
-    return `This action updates a #${id} pesquisadore`;
+    return await this.prismaService.pesquisador.update({where: {id: id}, data: updatePesquisadoreDto},)
   }
 
-  async remove(id: string) {
+  async remove(id: UUID) {
     await this.cacheManager.del(PESQUISADORES_LIST_CACHE_KEY);
-    return `This action removes a #${id} pesquisadore`;
+    return await this.prismaService.pesquisador.delete({where: { id }})
   }
 }
