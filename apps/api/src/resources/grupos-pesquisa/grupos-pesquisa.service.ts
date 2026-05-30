@@ -1,33 +1,46 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateGruposPesquisaDto } from './dto/create-grupos-pesquisa.dto';
 import { UpdateGruposPesquisaDto } from './dto/update-grupos-pesquisa.dto';
 
+const GRUPOS_PESQUISA_LIST_CACHE_KEY = 'grupos-pesquisa:list';
+
 @Injectable()
 export class GruposPesquisaService {
-  constructor(private readonly prisma: PrismaService) {}
-  create(createGruposPesquisaDto: CreateGruposPesquisaDto) {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
+  ) {}
+
+  async create(createGruposPesquisaDto: CreateGruposPesquisaDto) {
+    await this.cacheManager.del(GRUPOS_PESQUISA_LIST_CACHE_KEY);
     return 'This action adds a new gruposPesquisa';
   }
 
-  findAll() {
-    return this.prisma.grupoPesquisa.findMany({
-      omit: {
-        criadoEm: true,
-        atualizadoEm: true,
-      },
-    });
+  async findAll() {
+    return this.cacheManager.wrap(GRUPOS_PESQUISA_LIST_CACHE_KEY, () =>
+      this.prisma.grupoPesquisa.findMany({
+        omit: {
+          criadoEm: true,
+          atualizadoEm: true,
+        },
+      }),
+    );
   }
 
   findOne(id: string) {
     return `This action returns a #${id} gruposPesquisa`;
   }
 
-  update(id: string, updateGruposPesquisaDto: UpdateGruposPesquisaDto) {
+  async update(id: string, updateGruposPesquisaDto: UpdateGruposPesquisaDto) {
+    await this.cacheManager.del(GRUPOS_PESQUISA_LIST_CACHE_KEY);
     return `This action updates a #${id} gruposPesquisa`;
   }
 
-  remove(id: string) {
+  async remove(id: string) {
+    await this.cacheManager.del(GRUPOS_PESQUISA_LIST_CACHE_KEY);
     return `This action removes a #${id} gruposPesquisa`;
   }
 }
