@@ -160,6 +160,25 @@ Observações:
 - O LangChain consulta tabelas de RAG/embeddings e usa o LLM apenas quando necessário.
 - A geração de embeddings após carga/atualização dos dados será refinada.
 
+### 5.1 Estrutura de Monorepo
+
+O projeto usa um monorepo npm workspace, com `package.json` na raiz e `package.json` por aplicação.
+
+Estrutura atual:
+
+- `package.json` na raiz de `oda`: declara `workspaces`, scripts agregados, dependências comuns do NestJS e ferramentas de desenvolvimento compartilhadas.
+- `apps/api/package.json`: mantém scripts e dependências específicas da API REST, como Prisma, cache, validação e PostgreSQL.
+- `apps/langchain/package.json`: mantém scripts e dependências específicas do serviço LangChain/RAG.
+- `package-lock.json` canônico fica na raiz de `oda`.
+
+Decisões:
+
+- As versões comuns de NestJS devem ser centralizadas na raiz para evitar desalinhamento entre aplicações.
+- Todos os pacotes `@nestjs/*` devem ser mantidos no `package.json` raiz.
+- Dependências específicas de cada aplicação permanecem no respectivo app.
+- A unificação de dependências por workspace não altera a separação lógica dos serviços: `api` e `langchain` continuam sendo aplicações executáveis separadamente.
+- Os scripts da raiz devem usar `npm --workspace` para executar comandos em cada app.
+
 ## 6. Modelagem de Dados
 
 Decisão inicial:
@@ -307,7 +326,14 @@ Observações:
 - A aplicação usa `ValidationPipe` global com `whitelist`, `forbidNonWhitelisted` e `transform`.
 - Os enums usados nos DTOs devem vir do Prisma Client gerado, não de enums locais duplicados.
 - Foi criado o alias TypeScript `@/*` apontando para `src/*` para reduzir imports longos.
-- As rotas scaffold existentes foram ajustadas para tratar `id` como UUID string, alinhadas ao schema.
+- As rotas scaffold existentes foram ajustadas para validar `id` com `ParseUUIDPipe`, alinhadas ao uso de UUID no schema.
+- Os services recebem IDs como `string`; a validação de formato UUID fica na borda HTTP, nos controllers.
+- Erros conhecidos do Prisma são tratados por um exception filter global em `src/filters/prisma.exception.filter.ts`.
+- O mapeamento inicial de erros Prisma para HTTP é:
+  - `P2025` para `404 Not Found`.
+  - `P2002` para `409 Conflict`.
+  - `P2003` para `422 Unprocessable Entity`.
+  - `P2014` para `422 Unprocessable Entity`.
 - O recurso `producoes` existe no código e possui modelo correspondente no Prisma, mas o service ainda está em scaffold.
 - Ainda não há paginação, filtros, ordenação ou padronização de resposta.
 - Os testes Jest atualmente falham ao importar o Prisma Client gerado por incompatibilidade com `import.meta` em ambiente CommonJS de teste; o build da API passa.
