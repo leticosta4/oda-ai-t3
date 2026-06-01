@@ -115,7 +115,6 @@ model Pesquisador {
 }
 
 model MembroGrupo {
-  id            String        @id @default(uuid())
   pesquisador   Pesquisador   @relation(fields: [pesquisadorId], references: [id])
   pesquisadorId String        @map("pesquisador_id")
   grupoPesquisa GrupoPesquisa @relation(fields: [grupoId], references: [id])
@@ -123,7 +122,7 @@ model MembroGrupo {
   dataEntrada   DateTime?     @map("data_entrada")
   criadoEm      DateTime      @default(now()) @map("criado_em")
   atualizadoEm  DateTime      @updatedAt @map("atualizado_em")
-
+  @@id([pesquisadorId, grupoId])
   @@map("membro_grupo")
 }
 
