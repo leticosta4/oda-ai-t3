@@ -1,0 +1,5 @@
+playwright
+beautifulsoup4
+lxml
+python-dotenv
+# Outras dependências que podem ser necessárias conforme o código

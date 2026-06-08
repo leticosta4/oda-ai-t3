@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
 from database import init_db, obter_proximo_pendente, atualizar_status, criar_conexao
 
-DATA_DIR = "./apps/scraper/data"
+DATA_DIR = "./data"
 ISSUES_LOG = f"{DATA_DIR}/issues.log"
 APP_LOG = f"{DATA_DIR}/scraper.log"
 

@@ -1,7 +1,7 @@
 import os
 import sqlite3
 
-DATA_DIR = "./apps/scraper/data"
+DATA_DIR = "./data"
 DB_FILE = f"{DATA_DIR}/scraper_estado.db"
 
 def criar_conexao():

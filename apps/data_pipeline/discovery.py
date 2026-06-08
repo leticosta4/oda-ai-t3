@@ -3,10 +3,9 @@ import time
 import logging
 import re
 from playwright.sync_api import sync_playwright, Error as PlaywrightError
-# Chama de modo limpo a classe separada!
 from database import init_db, salvar_id_banco
 
-DATA_DIR = "./apps/scraper/data"
+DATA_DIR = "./data"
 DISCOVERY_LOG = f"{DATA_DIR}/discovery.log"
 
 logger = logging.getLogger("DiscoverySonda")

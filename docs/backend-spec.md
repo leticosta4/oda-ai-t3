@@ -51,14 +51,16 @@ Acionamento inicial:
 
 ### 3.1.1 ETL e Orquestração
 
-O ETL será planejado como responsabilidade separada do scraper. Tecnologias candidatas:
+O ETL será planejado como responsabilidade separada do scraper. A ferramenta escolhida é o **Apache Hop**.
 
-- Apache Hop.
-- Apache Airflow.
-- Airbyte.
+Responsabilidades atuais do ETL (Apache Hop):
+- `load_cnpq_xmls`: Lê e mapeia os arquivos XML gerados pelo scraper.
+- `clean_research_group_data`: Padroniza nomes (caixa alta) e limpa IDs para garantir consistência antes da inserção no banco relacional.
+- `clean_researchers_data`: Pipeline dedicado para padronizar e limpar dados dos pesquisadores (ex: limpar máscaras de Lattes ID e padronização nominal).
+- `enrich_researcher_data` (Pipeline de Enriquecimento Futuro): Preparado para realizar chamadas REST a APIs externas (OpenAlex, ORCID, DOI) a partir do Lattes ID para complementar os dados de pesquisadores e produções.
+- `main_workflow`: Workflow orquestrador que conecta sequencialmente todos os pipelines acima.
 
-Responsabilidades esperadas do ETL:
-
+Responsabilidades esperadas:
 - Limpeza de dados coletados.
 - Padronização de campos.
 - Normalização de entidades.
@@ -156,15 +158,16 @@ Observações:
 - **LangChain Service (Python/FastAPI):** Microserviço especializado em busca semântica e RAG. Utiliza Google Gemini (LLM e Embeddings).
 - **Vetorização:** No estágio atual do MVP, utiliza vector store em memória (FAISS) alimentado por arquivos XML.
 
-## 6.4 Estado Atual do Módulo LangChain (Python)
+## 6.5 Estado Atual do Scraper Service (Python)
 
-- **Framework:** FastAPI.
-- **LLM:** Google Gemini 1.5 Flash.
-- **Embeddings:** Google Gemini (models/embedding-001).
-- **Vector Store:** FAISS (In-memory).
-- **Ingestão:** Parser customizado para arquivos XML do DGP/CNPq.
-- **Endpoints:**
-  - `POST /question`: Recebe uma pergunta e retorna uma resposta baseada no contexto dos XMLs.
+- **Linguagem:** Python.
+- **Ferramentas:** Playwright (automação), BeautifulSoup4 (parsing), SQLite (controle de estado).
+- **Arquitetura:** Modelo Produtor-Consumidor.
+  - `discovery.py` (Sonda): Identifica IDs de grupos de pesquisa via busca parametrizada e alimenta a fila no SQLite.
+  - `scraper.py` (Aspirador): Consome IDs da fila, extrai dados detalhados (incluindo membros e linhas de pesquisa) e gera arquivos XML.
+  - `run.py`: Orquestrador que executa ambos os processos em paralelo.
+- **Localização:** `apps/data_pipeline`.
+- **Saída:** Arquivos XML estruturados na pasta `apps/data_pipeline/data`, prontos para consumo pelo ETL ou LangChain.
 
 ### 5.1 Estrutura de Monorepo
 
