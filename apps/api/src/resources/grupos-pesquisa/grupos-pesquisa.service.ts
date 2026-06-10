@@ -49,10 +49,7 @@ export class GruposPesquisaService {
         where,
         skip: query?.skip,
         take: query?.take,
-        omit: {
-          criadoEm: true,
-          atualizadoEm: true,
-        },
+        
       });
     }
 

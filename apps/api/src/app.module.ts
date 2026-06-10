@@ -15,7 +15,7 @@ import { CacheModule } from './cache/cache.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: '../../.env',
     }),
     {
       module: PrismaModule,

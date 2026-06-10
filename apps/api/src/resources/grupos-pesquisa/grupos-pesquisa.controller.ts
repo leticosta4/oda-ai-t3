@@ -24,8 +24,8 @@ export class GruposPesquisaController {
   }
 
   @Get()
-  findAll(@Query() query: FindAllGruposPesquisaDto) {
-    return this.gruposPesquisaService.findAll(query);
+  async findAll(@Query() query: FindAllGruposPesquisaDto) {
+    return  await this.gruposPesquisaService.findAll(query);
   }
 
   @Get(':id')
