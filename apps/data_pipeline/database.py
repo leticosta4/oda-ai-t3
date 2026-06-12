@@ -1,58 +1,78 @@
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import DictCursor
+from dotenv import load_dotenv
 
-DATA_DIR = "./data"
-DB_FILE = f"{DATA_DIR}/scraper_estado.db"
+load_dotenv("../../.env")
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def criar_conexao():
-    # As flags atómicas protegem 100% dos bloqueios simultaneos OS
-    conn = sqlite3.connect(DB_FILE, timeout=60.0, check_same_thread=False, isolation_level=None)
-    conn.execute('pragma journal_mode=wal')
-    return conn
+    """Cria uma conexão com o banco de dados PostgreSQL."""
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = True
+        return conn
+    except Exception as e:
+        print(f"Erro ao conectar ao PostgreSQL: {e}")
+        raise
 
 def init_db():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    conn = criar_conexao()
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS fila_extracao (
-            termo_busca TEXT PRIMARY KEY,
-            status TEXT DEFAULT 'PENDENTE',
-            tentativas INTEGER DEFAULT 0,
-            ultima_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.close()
+  
+    try:
+        conn = criar_conexao()
+        conn.close()
+        print("Conexão com PostgreSQL estabelecida com sucesso.")
+    except Exception as e:
+        print(f"Falha na inicialização do banco: {e}")
 
-def salvar_id_banco(identificador, logger):
+def salvar_id_banco(id_dgp, logger=None):
+    """Insere um novo ID na fila de extração se não existir."""
     conn = criar_conexao()
     try:
-        conn.execute("INSERT INTO fila_extracao (termo_busca, status) VALUES (?, 'PENDENTE')", (identificador,))
-        logger.debug(f"    [+] ID Mapeada p/ Fila PENDENTE: {identificador}")
-    except sqlite3.IntegrityError:
-        pass  # Já listado em pagina ou termo anterior!
+        with conn.cursor() as cur:
+            cur.execute('''
+                INSERT INTO fila_extracao (termo_busca, status)
+                VALUES (%s, 'PENDENTE')
+                ON CONFLICT (termo_busca) DO NOTHING
+            ''', (id_dgp,))
+            if logger:
+                logger.debug(f"ID {id_dgp} verificado/inserido na fila.")
     finally:
         conn.close()
 
 def obter_proximo_pendente():
+    """Recupera o próximo item pendente da fila com lock para evitar duplicidade."""
     conn = criar_conexao()
     try:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT termo_busca, tentativas FROM fila_extracao 
-            WHERE status IN ('PENDENTE', 'ERRO') 
-            ORDER BY status DESC, tentativas ASC LIMIT 1
-        ''')
-        return cursor.fetchone()
+        with conn.cursor(cursor_factory=DictCursor) as cur:
+            cur.execute('''
+                UPDATE fila_extracao
+                SET status = 'EM_ANDAMENTO', ultima_atualizacao = CURRENT_TIMESTAMP
+                WHERE termo_busca = (
+                    SELECT termo_busca
+                    FROM fila_extracao
+                    WHERE status = 'PENDENTE'
+                    ORDER BY ultima_atualizacao ASC
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                )
+                RETURNING termo_busca, tentativas
+            ''')
+            row = cur.fetchone()
+            return (row['termo_busca'], row['tentativas']) if row else None
     finally:
         conn.close()
 
 def atualizar_status(termo, status, tentativa):
+    """Atualiza o status e o contador de tentativas de um termo."""
     conn = criar_conexao()
     try:
-        conn.execute('''
-            UPDATE fila_extracao 
-            SET status = ?, tentativas = ?, ultima_atualizacao = CURRENT_TIMESTAMP 
-            WHERE termo_busca = ?
-        ''', (status, tentativa, termo))
+        with conn.cursor() as cur:
+            cur.execute('''
+                UPDATE fila_extracao
+                SET status = %s, tentativas = %s, ultima_atualizacao = CURRENT_TIMESTAMP
+                WHERE termo_busca = %s
+            ''', (status, tentativa, termo))
     finally:
         conn.close()
