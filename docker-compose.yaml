@@ -28,25 +28,11 @@ services:
     environment:
       HOP_PROJECT_NAME: ${HOP_PROJECT_NAME:-oda}
       HOP_PROJECT_FOLDER: ${HOP_PROJECT_FOLDER:-/files/apps/data_pipeline/hop}
+      OPEN_ALEX_KEY: ${OPEN_ALEX_KEY}
     volumes:
       - .:/files
     depends_on:
       - postgres
-      - redis
-
-  hop-web:
-    image: apache/hop-web:2.18.0
-    container_name: oda_hop_web
-    ports:
-      - "8080:8080"
-    environment:
-      HOP_PROJECT_NAME: ${HOP_PROJECT_NAME:-oda}
-      HOP_PROJECT_FOLDER: ${HOP_PROJECT_FOLDER:-/files/apps/data_pipeline/hop}
-    volumes:
-      - .:/files
-    depends_on:
-      - postgres
-      - redis
-
+      
 volumes:
   postgres_data:
