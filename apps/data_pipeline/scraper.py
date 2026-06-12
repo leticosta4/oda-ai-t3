@@ -2,7 +2,7 @@ import os
 import time
 import signal
 import sys
-import sqlite3  # <--- ADICIONE ESTA LINHA AQUI!
+import sqlite3  
 import logging
 import re
 import argparse
@@ -83,20 +83,37 @@ def extrair_detalhes_rh(html_content):
 
 def extrair_detalhes_da_linha(html_linha, nome_linha_esperado):
     soup = BeautifulSoup(html_linha, 'html.parser')
-    linha = {"nome": nome_linha_esperado, "objetivo": "Não Identificado", "areas_conhecimento": [], "palavras_chave": [], "setores_aplicacao": []}
+    linha = {
+        "nome": nome_linha_esperado, 
+        "objetivo": "Não Identificado", 
+        "areas_conhecimento": [], 
+        "palavras_chave": [], 
+        "setores_aplicacao": []
+    }
     
-    for item in soup.find_all(string=re.compile(r'Palavras?[- ]chave:', re.IGNORECASE)):
-        conteudo = item.find_next()
-        if conteudo: linha['palavras_chave'].append(limpar_texto(conteudo.get_text(" / ", strip=True)))
-    for item in soup.find_all(string=re.compile(r'Setor.* aplica', re.IGNORECASE)):
-        conteudo = item.find_next()
-        if conteudo: linha['setores_aplicacao'].append(limpar_texto(conteudo.get_text(" | ", strip=True)))
-    for item in soup.find_all(string=re.compile(r'Área de conhe', re.IGNORECASE)):
-        conteudo = item.find_next()
-        if conteudo: linha['areas_conhecimento'].append(limpar_texto(conteudo.get_text(" | ", strip=True)))
-    for item in soup.find_all(string=re.compile(r'Objetivo:', re.IGNORECASE)):
-        conteudo = item.find_next()
-        if conteudo: linha['objetivo'] = limpar_texto(conteudo.get_text(" ", strip=True))
+    container_info = soup.find(id='linhaPesquisa')
+    if container_info:
+        obj_label = container_info.find(string=re.compile(r'Objetivo', re.IGNORECASE))
+        if obj_label:
+            target = obj_label.find_parent().find_next_sibling('div', class_='controls')
+            if target:
+                linha['objetivo'] = limpar_texto(target.get_text(strip=True))
+
+    secoes = {
+        'palavraChave': 'palavras_chave',
+        'areaConhecimento': 'areas_conhecimento',
+        'setorAplicacao': 'setores_aplicacao'
+    }
+
+    for html_id, campo_destino in secoes.items():
+        container = soup.find(id=html_id)
+        if container:
+            lis = container.find_all('li')
+            if lis:
+                itens = [limpar_texto(li.get_text(strip=True)) for li in lis if limpar_texto(li.get_text(strip=True))]
+                linha[html_id if html_id != 'palavraChave' else 'palavras_chave'] = itens # Ajuste de nome
+                linha[campo_destino] = itens
+
     return linha
 
 def extrair_html_espelho(html_content, html_array_linhas_popups, membro_detalhes_map):
@@ -195,9 +212,18 @@ def extrair_html_espelho(html_content, html_array_linhas_popups, membro_detalhes
 
 def extrair_dados_grupo(context, page, identificador_dgp):
     logger.info(f"Estabelecendo socket direto na extracao do espelho {identificador_dgp}...")
+    
+    def block_aggressively(route):
+        if route.request.resource_type in ["image", "stylesheet", "font", "media"]:
+            route.abort()
+        else:
+            route.continue_()
+    
+    page.route("**/*", block_aggressively)
+
     try:
         url_alvo = f"http://dgp.cnpq.br/dgp/espelhogrupo/{identificador_dgp}"
-        response = page.goto(url_alvo, timeout=30000)
+        response = page.goto(url_alvo, timeout=30000, wait_until="domcontentloaded")
         
         if response and response.status == 429: raise Exception("HTTP_429_RATE_LIMIT")
         elif response and response.status >= 500: raise Exception(f"HTTP_ERROR_{response.status}")
@@ -208,7 +234,7 @@ def extrair_dados_grupo(context, page, identificador_dgp):
         linhas_tr = page.locator("#recursosHumanos tbody tr").all()
         total_membros = len(linhas_tr)
         
-        logger.debug(f"Verificando {total_membros} pesquisadores por abas vinculadas na rede Lattes.")
+        logger.debug(f"Verificando {total_membros} pesquisadores...")
         for index, tr in enumerate(linhas_tr, start=1):
             aba_rh = None
             try:
@@ -218,19 +244,16 @@ def extrair_dados_grupo(context, page, identificador_dgp):
                     btn_rh = tr.locator("a[id*='idBtnVisualizarEspelho']").first
                     
                     if btn_rh.count() > 0:
-                        logger.debug(f"[{index}/{total_membros}] Sonda secundaria em -> {nome}")
+                        logger.debug(f"[{index}/{total_membros}] Sonda secundaria -> {nome}")
                         with context.expect_page(timeout=10000) as aba_rh_info:
                             btn_rh.click()
                         
                         aba_rh = aba_rh_info.value
+                        aba_rh.route("**/*", block_aggressively)
                         aba_rh.wait_for_load_state("domcontentloaded")
-                        time.sleep(0.3)
                         
                         detalhes = extrair_detalhes_rh(aba_rh.content())
                         membro_detalhes_map[nome] = detalhes
-                        
-                        lattes_coletado = detalhes.get("lattes", "")
-                        logger.debug(f"    └─ Lattes capturado com sucesso: {lattes_coletado}")
             except Exception:
                 pass
             finally:
@@ -243,13 +266,13 @@ def extrair_dados_grupo(context, page, identificador_dgp):
         for idx, botao in enumerate(botoes_linha, start=1):
             aba_linha = None
             try:
-                logger.debug(f"[{idx}/{total_linhas}] Varredura estrutural em Linhas de Pesquisa Filhas...")
+                logger.debug(f"[{idx}/{total_linhas}] Varredura em Linhas de Pesquisa...")
                 with context.expect_page(timeout=10000) as aba_linha_info: 
                     botao.click()
                     
                 aba_linha = aba_linha_info.value
+                aba_linha.route("**/*", block_aggressively)
                 aba_linha.wait_for_load_state("domcontentloaded")
-                time.sleep(0.3) 
                 html_popups.append(aba_linha.content())
             except Exception:
                 pass
