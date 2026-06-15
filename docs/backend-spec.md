@@ -241,8 +241,10 @@ Tabelas/modelos atualmente presentes no schema Prisma:
 - `MembroGrupo`.
 - `MembroLinhaPesquisa`.
 - `AreaConhecimento`.
+- `AreaAtuacao`.
 - `PalavraChave`.
 - `SetorAplicacao`.
+- `PesquisadorAreaAtuacao`.
 - `LinhaPesquisaPalavraChave`.
 - `LinhaPesquisaSetorAplicacao`.
 - `Producao`.
