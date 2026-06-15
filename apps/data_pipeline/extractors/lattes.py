@@ -1,8 +1,8 @@
-from xml.etree.ElementInclude import include
 import requests
 from bs4 import BeautifulSoup
 import os
 import sys
+import re
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common.config import IMAGE_DIR
@@ -18,7 +18,7 @@ class LattesExtractor():
         #     imagem_url = 'https:' + imagem_url
         try:
             img_resposta = requests.get(imagem_url)
-            nome_arquivo = f"{nome_pesquisador}.png"
+            nome_arquivo = f"{nome_pesquisador}.webp"
             caminho_completo = os.path.join(IMAGE_DIR, nome_arquivo)
             with open(caminho_completo, "wb") as arquivo:
                 arquivo.write(img_resposta.content)
@@ -139,10 +139,31 @@ class LattesExtractor():
     
     def extrair_detalhes_eventos(self, html):
         soup = BeautifulSoup(html, "html.parser")
-        eventos = {"nome": "", "tipo": ""}
-        
-        soup.find
-        
+        evento_default = {"nome": "", "tipo": "", "ano": ""}
+        eventos = {"evento_participacao":[], "evento_organizacao": []}
+        chaves = {"ParticipacaoEventos":"evento_participacao","EventosOrganizacao":"evento_organizacao"}
+
+        for chave, chave_evento in chaves.items():
+            seen = set()
+            a_tag = soup.find("a", {'name': chave})
+            if not a_tag: continue
+            div_tag = a_tag.find_parent("div", class_="layout-cell layout-cell-12 data-cell")
+            if not div_tag: continue
+            for div in div_tag.find_all("div", class_="layout-cell layout-cell-11"):
+                novo_evento = evento_default.copy()
+                span_tag = div.find("span")      
+                if not span_tag:
+                    continue
+                texto = span_tag.get_text(strip=True)
+                sep = re.split(r"(.+?)\s*(\b\d{4}\b)\.\s*\((.+?)\)", texto)
+                if(sep[0] == ""): sep.pop(0)
+                if(sep[-1] == "."): sep.pop(-1)
+                # print(sep)
+                if texto not in seen:
+                    seen.add(texto)
+                    eventos[chaves[chave]].append(novo_evento)  
+
+
     def extrair_formacoes(self, html):
         soup = BeautifulSoup(html, "html.parser")
         
