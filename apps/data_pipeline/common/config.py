@@ -1,14 +1,17 @@
 import logging
 import sys
-
+import os
 DATA_DIR = "./data"
 DGP_DATA_DIR = f"{DATA_DIR}/dgp"
+os.makedirs(DGP_DATA_DIR, exist_ok=True)
 LATTES_DATA_DIR = f"{DATA_DIR}/lattes"
+os.makedirs(LATTES_DATA_DIR, exist_ok=True)
 ISSUES_LOG = f"{DATA_DIR}/dgp/issues.log"
 APP_LOG = f"{DATA_DIR}/dgp/scraper.log"
 DB_FILE = f"{DATA_DIR}/dgp/scraper_estado.db"
 DISCOVERY_LOG = f"{DATA_DIR}/dgp/discovery.log"
 IMAGE_DIR = f"{DATA_DIR}/images"
+os.makedirs(IMAGE_DIR, exist_ok=True)
 
 # Configurações do ETL (Apache Hop)
 # Se estiver rodando fora do Docker, use localhost:8080. 

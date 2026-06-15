@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 from requests.auth import HTTPBasicAuth
 from config import HOP_SERVER_URL, HOP_USER, HOP_PASS, HOP_WORKFLOW_PATH, dgp_logger as logger
