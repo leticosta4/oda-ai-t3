@@ -158,11 +158,18 @@ class LattesExtractor():
                 sep = re.split(r"(.+?)\s*(\b\d{4}\b)\.\s*\((.+?)\)", texto)
                 if(sep[0] == ""): sep.pop(0)
                 if(sep[-1] == "."): sep.pop(-1)
-                # print(sep)
-                if texto not in seen:
-                    seen.add(texto)
-                    eventos[chaves[chave]].append(novo_evento)  
+                print("Texto:", sep[0], "| Ano:", sep[1], "| Tipo:", sep[2])
+                if len(sep) == 3:
+                    novo_evento["nome"] = sep[0].strip()
+                    novo_evento["ano"] = sep[1].strip()
+                    novo_evento["tipo"] = sep[2].strip()
 
+                if novo_evento["nome"] not in seen:
+                    print("Adicionando evento:", novo_evento)
+                    eventos[chave_evento].append(novo_evento)
+                    seen.add(novo_evento["nome"])
+
+        return eventos
 
     def extrair_formacoes(self, html):
         soup = BeautifulSoup(html, "html.parser")

@@ -3,6 +3,7 @@ import time
 import signal
 import sys
 import argparse
+print(os.path.dirname)
 
 # Adiciona a raiz do data_pipeline ao path para resolver os imports de common e extractors
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,6 +43,7 @@ def buscar_e_extrair_lattes(context, page: Page, nome_pesquisador):
         page.goto(lattes_url, timeout=60000)
         
         page.fill("input[id='textoBusca']", nome_pesquisador)
+        page.click("input[id='buscarDemais']")
         page.click("a[id='botaoBuscaFiltros']")
         page.wait_for_selector(".resultado", timeout=30000)
         
@@ -65,10 +67,11 @@ def buscar_e_extrair_lattes(context, page: Page, nome_pesquisador):
         html_content = curriculo_page.content()
         basico = lattes_extractor.extrair_informacoes_basicas(html_content)
         projetos = lattes_extractor.extrair_detalhes_projetos(html_content)
+        eventos = lattes_extractor.extrair_detalhes_eventos(html_content)
         imagem = lattes_extractor.extrair_imagem(html_content, nome_pesquisador)
         
         nome_formatado = nome_pesquisador.replace(" ", "_") 
-        dados = {**basico, **projetos}
+        dados = {**basico, **projetos, **eventos}
         salvar_json(dados,nome_pesquisador)
         curriculo_page.close()
         return dados
@@ -77,27 +80,33 @@ def buscar_e_extrair_lattes(context, page: Page, nome_pesquisador):
         logger.error(f"Erro ao processar {nome_pesquisador}: {e}")
         return None, None
 
+import concurrent.futures
+
+def processar_pesquisador_worker(nome):
+    """Função executada por cada worker em sua própria thread."""
+    if _stop_requested:
+        return
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            buscar_e_extrair_lattes(context, page, nome)
+        finally:
+            browser.close()
+
 def executar_pipeline_lattes(nomes=None):
     if not nomes:
         # Apenas para teste se nada for passado
-        nomes = ["Eduardo Manuel de Freitas Jorge", "Altemir José Mossi", "Alfredo Castamann"]
+        nomes = ["Eduardo Manuel de Freitas Jorge", "Altemir José Mossi", "Alfredo Castamann", "Eduardo Arthur Izycki", "Erika Stockler", "Alexandre Hugo Cezar Barros", "Ana Luiza du Bocage Neta", "Anália Carmem Silva de Almeida"]
 
-    logger.info(f"Scraper de Lattes iniciado para {len(nomes)} pesquisadores")
+    logger.info(f"Scraper de Lattes iniciado para {len(nomes)} pesquisadores (2 Workers)")
     
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True) # Headless False para você ver acontecendo no teste
-        context = browser.new_context()
-        page = context.new_page()
-        nomes = ["Eduardo Manuel de Freitas Jorge", "Altemir José Mossi", "Alfredo Castamann"]
-        for nome in nomes:
-            if _stop_requested: break
-            
-            dados = buscar_e_extrair_lattes(context, page, nome)
-           
-            
-            time.sleep(2) # Pequeno delay entre buscas
-            
-        browser.close()
+    # Utilizamos ThreadPoolExecutor para rodar 2 pesquisadores ao mesmo tempo
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        # O map distribui a lista de nomes entre as threads disponíveis
+        executor.map(processar_pesquisador_worker, nomes)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
