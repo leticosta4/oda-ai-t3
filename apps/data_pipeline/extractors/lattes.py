@@ -141,15 +141,16 @@ class LattesExtractor():
         soup = BeautifulSoup(html, "html.parser")
         evento_default = {"nome": "", "tipo": "", "ano": ""}
         eventos = {"evento_participacao":[], "evento_organizacao": []}
-        chaves = {"ParticipacaoEventos":"evento_participacao","EventosOrganizacao":"evento_organizacao"}
+        chaves = {"ParticipacaoEventos":"evento_participacao","OrganizacaoEventos":"evento_organizacao"}
 
         for chave, chave_evento in chaves.items():
             seen = set()
             a_tag = soup.find("a", {'name': chave})
+            print("Procurando chave", chave)
             if not a_tag: continue
-            div_tag = a_tag.find_parent("div", class_="layout-cell layout-cell-12 data-cell")
+            div_tag = a_tag.find_next("div", class_="inst_back")
             if not div_tag: continue
-            for div in div_tag.find_all("div", class_="layout-cell layout-cell-11"):
+            for div in div_tag.find_next_siblings("div", class_="layout-cell layout-cell-11"):
                 novo_evento = evento_default.copy()
                 span_tag = div.find("span")      
                 if not span_tag:
@@ -158,14 +159,12 @@ class LattesExtractor():
                 sep = re.split(r"(.+?)\s*(\b\d{4}\b)\.\s*\((.+?)\)", texto)
                 if(sep[0] == ""): sep.pop(0)
                 if(sep[-1] == "."): sep.pop(-1)
-                print("Texto:", sep[0], "| Ano:", sep[1], "| Tipo:", sep[2])
                 if len(sep) == 3:
                     novo_evento["nome"] = sep[0].strip()
                     novo_evento["ano"] = sep[1].strip()
                     novo_evento["tipo"] = sep[2].strip()
 
                 if novo_evento["nome"] not in seen:
-                    print("Adicionando evento:", novo_evento)
                     eventos[chave_evento].append(novo_evento)
                     seen.add(novo_evento["nome"])
 
