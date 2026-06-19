@@ -62,7 +62,7 @@ model GrupoPesquisa {
   instituicaoId      String            @map("instituicao_id")
   membros            MembroGrupo[]
   linhasPesquisa     LinhaPesquisa[]
-  logColetaGrupo LogColetaGrupo[] 
+  logColeta          LogColetaItem[]   @relation("GrupoLogs")
   criadoEm           DateTime          @default(now()) @map("criado_em")
   atualizadoEm       DateTime          @updatedAt @map("atualizado_em")
 
@@ -111,6 +111,7 @@ model Pesquisador {
   membrosGrupo         MembroGrupo[]
   membrosLinhaPesquisa MembroLinhaPesquisa[]
   producoes            ProducaoPesquisador[]
+  logColeta            LogColetaItem[] @relation("PesquisadorLogs")
   areasAtuacao         PesquisadorAreaAtuacao[]
   criadoEm             DateTime                 @default(now()) @map("criado_em")
   atualizadoEm         DateTime                 @updatedAt @map("atualizado_em")
@@ -343,60 +344,77 @@ model IndexingJob {
 // Domínio do Scrapper
 
 enum StatusColeta {
-  PENDENTE     @map("pendente")
-  EM_ANDAMENTO @map("em_andamento")
+  EMANDAMENTO @map("em_andamento")
   CONCLUIDA    @map("concluida")
-  ERRO         @map("erro")
 
   @@map("status_coleta")
-}
-
-enum AcaoColeta {
-  INICIO @map("inicio")
-  FIM    @map("fim")
-  ERRO   @map("erro")
-
-  @@map("acao_coleta")
 }
 
 model ColetaScraper {
   id                   String           @id @default(uuid())
   dataInicio           DateTime         @map("data_inicio")
-  dataFim              DateTime         @map("data_fim")
-  status               StatusColeta     @default(PENDENTE)
+  dataFim              DateTime?         @map("data_fim")
+  status               StatusColeta     @default(EMANDAMENTO)
   registrosProcessados Int              @map("registros_processados")
-  origem               String
-  logErros             String           @map("log_erros")
-  logsColetaGrupo      LogColetaGrupo[]
+  logsColetaGrupo      LogColetaItem[]
   criadoEm             DateTime         @default(now()) @map("criado_em")
   atualizadoEm         DateTime         @updatedAt @map("atualizado_em")
 
   @@map("coleta_scraper")
 }
 
-model LogColetaGrupo {
-  id            String        @id @default(uuid())
-  coletaScraper ColetaScraper @relation(fields: [coletaId], references: [id])
-  coletaId      String        @map("coleta_id")
-  grupo         GrupoPesquisa @relation(fields: [grupoId], references: [id])
-  grupoId       String        @map("grupo_id")
-  acao          AcaoColeta    @default(INICIO)
-  criadoEm      DateTime      @default(now()) @map("criado_em")
-  atualizadoEm  DateTime      @updatedAt @map("atualizado_em")
-
+enum LogColetaStatus {
+  SUCESSO
+  ERRO
+}
+enum LogColetaEntidade {
+  PESQUISADOR
+  GRUPO
+}
+model LogColetaItem {
+  id            String                  @id @default(uuid())
+  coletaScraper ColetaScraper           @relation(fields: [coletaId], references: [id])
+  coletaId      String                  @map("coleta_id")
+  grupo         GrupoPesquisa?          @relation("GrupoLogs", fields: [entidadeId], references: [dgpId], map: "fk_log_grupo", onDelete: NoAction, onUpdate: NoAction)
+  pesquisador   Pesquisador?            @relation("PesquisadorLogs", fields: [entidadeId], references: [lattesId], map: "fk_log_pesquisador", onDelete: NoAction, onUpdate: NoAction)
+  entidade      LogColetaEntidade         
+  entidadeId    String                  @map("entidade_id")
+  status        LogColetaStatus 
+  criadoEm      DateTime                @default(now()) @map("criado_em")
+  atualizadoEm  DateTime                @updatedAt @map("atualizado_em")
+  @@index([entidade, entidadeId, status])
   @@map("log_coleta_grupo")
 }
 
-model FilaExtracao {
-  termoBusca        String   @id @map("termo_busca")
-  status            String   @default("PENDENTE")
+enum FilaExtracaoStatus {
+  PENDENTE
+  CONCLUIDO
+  PROCESSANDO
+}
+model FilaExtracaoGrupo {
+  dgpId             String @unique @id @map("dgp_id")
+  nome              String
+  area              String
+  instituicao       String
+  status            FilaExtracaoStatus   @default(PENDENTE)
   tentativas        Int      @default(0)
+  similares         Int      @default(1)
+  criadoEm          DateTime @default(now()) @map("criado_em")
   ultimaAtualizacao DateTime @default(now()) @updatedAt @map("ultima_atualizacao")
 
-  @@map("fila_extracao")
+  @@map("fila_extracao_grupo")
 }
 
-// Tabelas de Staging para o Apache Hop
+model FilaExtracaoPesquisador {
+  lattesId String @unique @id @map("lattes_id")
+  nome String
+  status FilaExtracaoStatus @default(PENDENTE)
+  tentativas        Int      @default(0)
+  criadoEm          DateTime @default(now()) @map("criado_em")
+  ultimaAtualizacao DateTime @default(now()) @updatedAt @map("ultima_atualizacao")
+
+  @@map("fila_extracao_pesquisador")
+}
 model StgGrupoPesquisa {
   id               Int     @id @default(autoincrement())
   dgp_id           String?
