@@ -20,8 +20,8 @@ model Instituicao {
   id             String          @id @default(uuid())
   nome           String
   sigla          String
-  uf             Uf?             @relation(fields: [ufId], references: [id])
-  ufId           String?         @map("uf_id")
+  estado             Estado?             @relation(fields: [estadoId], references: [id])
+  estadoId           String?         @map("estado_id")
   gruposPesquisa GrupoPesquisa[]
   criadoEm       DateTime        @default(now()) @map("criado_em")
   atualizadoEm   DateTime        @updatedAt @map("atualizado_em")
@@ -29,19 +29,20 @@ model Instituicao {
   @@map("instituicao")
 }
 
-model Uf {
+model Estado {
   id           String        @id @default(uuid())
   sigla        String        @unique
   nome         String
+  regiao       String
   instituicoes Instituicao[]
   criadoEm     DateTime      @default(now()) @map("criado_em")
   atualizadoEm DateTime      @updatedAt @map("atualizado_em")
 
-  @@map("uf")
+  @@map("estado")
 }
 
 enum Situacao {
-  ATIVO      @map("ativo")
+  ATIVO      @map("certificado")
   INATIVO    @map("inativo")
   EM_ANALISE @map("em_analise")
 
@@ -423,7 +424,7 @@ model StgGrupoPesquisa {
   area_predominante String?
   repercussao      String?
   instituicao_nome String?
-  uf               String?
+  estado               String?
 
   @@map("stg_grupo_pesquisa")
 }
