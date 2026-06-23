@@ -8,13 +8,16 @@
     "prisma:generate": "pnpm -F @oda/database run prisma:generate",
     "prisma:studio": "pnpm -F @oda/database run prisma:studio",
     "prisma:push": "pnpm -F @oda/database run prisma:push",
+    "prisma:seed": "pnpm -F @oda/database run prisma:seed",
     "dev:api": "pnpm -F @oda/api start:dev",
     "dev:langchain": "pnpm -F @oda/langchain dev",
     "run:pipeline": "pnpm -F @oda/data-pipeline start",
     "pipeline:dgp": "pnpm -F @oda/data-pipeline start dgp",
     "pipeline:discovery": "pnpm -F @oda/data-pipeline start discovery",
     "pipeline:lattes": "pnpm -F @oda/data-pipeline start lattes",
-    "etl": "pnpm -F @oda/etl start"
+    "etl": "pnpm -F @oda/etl start",
+    "etl:grupo": "pnpm -F @oda/etl start grupo",
+    "etl:pesquisador": "pnpm -F @oda/etl start pesquisador"
   },
   "engines": {
     "node": ">=20"
