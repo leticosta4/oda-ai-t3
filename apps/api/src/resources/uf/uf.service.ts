@@ -9,12 +9,10 @@ const UF_LIST_CACHE_KEY = "uf:list"
 export class UfService {
     constructor(private readonly prismaService: PrismaService, @Inject(CACHE_MANAGER) private cacheManager: Cache){}
 
-    async create(createUfDto: CreateUfDto){
-        return this.prismaService.uf.create({data: createUfDto})
-    }
+   
     async findAll(){
         return this.cacheManager.wrap(UF_LIST_CACHE_KEY, async () => 
-        this.prismaService.uf.findMany(
+        this.prismaService.estado.findMany(
             { 
                 omit: {
                     criadoEm: true,
@@ -25,7 +23,7 @@ export class UfService {
         )
     }
     async findById(id: string){
-        return this.prismaService.uf.findUniqueOrThrow({
+        return this.prismaService.estado.findUniqueOrThrow({
             where: {
                 id
             }
@@ -33,10 +31,7 @@ export class UfService {
     }
 
     async findBySigla(sigla: string){
-        return await this.prismaService.uf.findUniqueOrThrow({ where: { sigla}})
+        return await this.prismaService.estado.findUniqueOrThrow({ where: { sigla}})
     }
-    async update(id: string, updateUf: UpdateUfDto){
-        return await this.prismaService.uf.update({ where: { id }, data: updateUf})
-    }
-    async delete(){}
+  
 }

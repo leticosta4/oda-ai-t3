@@ -36,14 +36,13 @@ export class GruposPesquisaService {
       if (query.instituicao) {
         where.instituicaoId = query.instituicao;
       }
-      if (query.uf) {
+      if (query.estado) {
         where.instituicao = {
-          ufId: query.uf,
+          estadoId: query.estado,
         };
       }
     }
 
-    // Bypass cache if filters or pagination are present (except default pagination)
     if (Object.keys(where).length > 0 || (query && (query.page > 1 || query.size !== 30))) {
       return this.prismaService.grupoPesquisa.findMany({
         where,
@@ -52,7 +51,6 @@ export class GruposPesquisaService {
         
       });
     }
-
     return this.cacheManager.wrap(GRUPOS_PESQUISA_LIST_CACHE_KEY, () =>
       this.prismaService.grupoPesquisa.findMany({
         skip: query?.skip,
@@ -111,7 +109,7 @@ export class GruposPesquisaService {
     await this.cacheManager.del(GRUPOS_PESQUISA_LIST_CACHE_KEY);
     return await this.prismaService.$transaction(async (tx) => {
       await tx.membroGrupo.deleteMany({ where: { grupoId: id } })
-      await tx.logColetaGrupo.deleteMany({ where: { grupoId: id } })
+      await tx.logColetaItem.deleteMany({ where: { entidadeId: id } })
       return await tx.grupoPesquisa.delete({ where: { id } })
 
     })

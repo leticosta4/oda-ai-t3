@@ -19,5 +19,5 @@ export class CreateInstituicaoDto {
 
   @IsOptional()
   @IsUUID()
-  ufId?: string;
+  estadoId?: string;
 }

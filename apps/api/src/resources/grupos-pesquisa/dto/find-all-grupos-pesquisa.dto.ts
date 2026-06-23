@@ -23,5 +23,5 @@ export class FindAllGruposPesquisaDto extends PaginationDto {
 
   @IsOptional()
   @IsUUID()
-  uf?: string;
+  estado?: string;
 }
