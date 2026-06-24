@@ -1,7 +1,12 @@
-FROM node:20-alpine AS base
-RUN npm i -g pnpm
+FROM node:22-alpine AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+
 FROM base AS build
 WORKDIR /app
+
+RUN pnpm config set package-import-method copy
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 
@@ -10,7 +15,8 @@ COPY shared/database/package.json ./shared/database/
 COPY shared/cache/package.json ./shared/cache/
 COPY shared/shared-types/package.json ./shared/shared-types/
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
 
 COPY shared/ ./shared/
 COPY apps/api/ ./apps/api/
@@ -18,10 +24,11 @@ COPY apps/api/ ./apps/api/
 RUN pnpm --filter @oda/database run prisma:generate
 RUN pnpm --filter @oda/database build
 RUN pnpm --filter @oda/api build
-# Usa o pnpm deploy para extrair a API e suas dependências de produção em uma pasta independente e limpa
-RUN pnpm --filter @oda/api --prod deploy /app/deploy --legacy
 
-FROM node:20-alpine AS prod
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm --filter @oda/api --prod deploy /app/deploy --legacy
+
+FROM node:22-alpine AS prod
 ENV NODE_ENV=production
 WORKDIR /app
 
