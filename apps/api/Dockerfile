@@ -15,6 +15,7 @@ RUN pnpm install --frozen-lockfile
 COPY shared/ ./shared/
 COPY apps/api/ ./apps/api/
 
+RUN pnpm --filter @oda/database run prisma:generate
 RUN pnpm --filter @oda/database build
 RUN pnpm --filter @oda/api build
 RUN pnpm --filter @oda/api --prod deploy /app/deploy
