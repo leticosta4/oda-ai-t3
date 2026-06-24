@@ -5,6 +5,7 @@ RUN corepack enable
 
 FROM base AS build
 WORKDIR /app
+ENV CI=true
 
 RUN pnpm config set package-import-method copy
 
@@ -22,8 +23,7 @@ COPY shared/ ./shared/
 COPY apps/api/ ./apps/api/
 
 RUN pnpm --filter @oda/database run prisma:generate
-RUN pnpm --filter @oda/database build
-RUN pnpm --filter @oda/api build
+RUN pnpm --filter @oda/api... build
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm --filter @oda/api --prod deploy /app/deploy --legacy
@@ -36,4 +36,4 @@ COPY --from=build /app/deploy ./
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
