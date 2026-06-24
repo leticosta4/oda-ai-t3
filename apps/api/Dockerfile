@@ -18,7 +18,8 @@ COPY apps/api/ ./apps/api/
 RUN pnpm --filter @oda/database run prisma:generate
 RUN pnpm --filter @oda/database build
 RUN pnpm --filter @oda/api build
-RUN pnpm --filter @oda/api --prod deploy /app/deploy
+# Usa o pnpm deploy para extrair a API e suas dependências de produção em uma pasta independente e limpa
+RUN pnpm --filter @oda/api --prod deploy /app/deploy --legacy
 
 FROM node:20-alpine AS prod
 ENV NODE_ENV=production
