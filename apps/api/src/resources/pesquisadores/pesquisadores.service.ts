@@ -65,10 +65,19 @@ export class PesquisadoresService {
   findOne(id: string) {
     return this.prismaService.pesquisador.findUnique({
       where: { id: id }, include: {
-        producoes: true,
+        producoes: {
+          include: {
+            producao: true
+          }
+        },
         membrosGrupo: {
           include: {
             grupoPesquisa: true
+          }
+        },
+        areasConhecimento: {
+          include: {
+            area: true
           }
         }
       }

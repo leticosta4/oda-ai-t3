@@ -29,10 +29,6 @@ export class CreateGruposPesquisaDto {
   repercussao?: string;
 
   @IsOptional()
-  @IsUUID()
-  areaConhecimentoId?: string;
-
-  @IsOptional()
   @IsEnum(Situacao)
   situacao?: Situacao;
 

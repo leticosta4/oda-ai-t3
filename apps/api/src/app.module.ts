@@ -10,6 +10,8 @@ import { LinhaPesquisaModule } from './resources/linha-pesquisa/linha-pesquisa.m
 import { PesquisadoresModule } from './resources/pesquisadores/pesquisadores.module';
 import { ProducoesModule } from './resources/producoes/producoes.module';
 import { CacheModule } from './cache/cache.module';
+import { AreaConhecimentoModule } from './resources/area-conhecimento/area-conhecimento.module';
+import { UfModule } from './resources/uf/uf.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { CacheModule } from './cache/cache.module';
     LinhaPesquisaModule,
     PesquisadoresModule,
     ProducoesModule,
+    AreaConhecimentoModule,
+    UfModule,
   ],
   controllers: [AppController],
   providers: [AppService],

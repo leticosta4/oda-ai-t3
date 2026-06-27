@@ -16,7 +16,13 @@ export class AreaConhecimentoService {
       
       async create(createAreaConhecimento: CreateAreaConhecimentoDto) {
         await this.cacheManager.del(AREA_CONHECIMENTO_LIST_KEY);
-        return await this.prismaService.areaConhecimento.create({data: createAreaConhecimento})
+        const nomeNormalizado = this.normalizeString(createAreaConhecimento.nome);
+        return await this.prismaService.areaConhecimento.create({
+          data: {
+            ...createAreaConhecimento,
+            nomeNormalizado,
+          }
+        });
       }
     
       async findAll() {
@@ -37,6 +43,30 @@ export class AreaConhecimentoService {
     
 
       async update(id: string, updateAreaConhecimento: UpdateAreaConhecimentoDto){
-        return await this.prismaService.areaConhecimento.update({ where: { id}, data: updateAreaConhecimento})
+        const updateData: any = { ...updateAreaConhecimento };
+        if (updateAreaConhecimento.nome) {
+          updateData.nomeNormalizado = this.normalizeString(updateAreaConhecimento.nome);
+        }
+        return await this.prismaService.areaConhecimento.update({ where: { id}, data: updateData})
+      }
+
+      private normalizeString(str: string): string {
+        if (!str) return '';
+        const stopwords = new Set([
+            'de', 'do', 'da', 'dos', 'das', 'em', 'um', 'uma', 'uns', 'umas', 
+            'para', 'com', 'por', 'sem', 'sob', 'sobre', 'a', 'o', 'as', 'os', 'e',
+            'of', 'the', 'in', 'on', 'at', 'for', 'with', 'by', 'a', 'an', 'and', 'to', 'from', 'about'
+        ]);
+        const words = str
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .split(' ');
+        return words
+            .filter(word => word.length > 0 && !stopwords.has(word))
+            .join('-');
       }
 }

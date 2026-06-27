@@ -66,10 +66,18 @@ export class GruposPesquisaService {
   async findOne(id: string) {
     return await this.prismaService.grupoPesquisa.findUniqueOrThrow({
       where: { id }, include: {
-        areaConhecimento: true,
+        areasConhecimento: {
+          include: {
+            area: true
+          }
+        },
         linhasPesquisa: true,
         instituicao: true,
-        membros: true,
+        membros: {
+          include: {
+            pesquisador: true
+          }
+        },
       }
     })
   }
