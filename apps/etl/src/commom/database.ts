@@ -1,5 +1,30 @@
 import { PrismaClient, prismaConfig } from '@oda/database';
+import { normalizeString } from './normalize';
 const prisma = new PrismaClient(prismaConfig);
+
+export async function getOrCreateAreaConhecimentoHierarchy(tx: any, areaStr: string) {
+    const parts = areaStr.split(/[>;]/).map(p => p.trim()).filter(p => p.length > 0);
+    let currentParentId: string | null = null;
+    let leafArea = null;
+
+    for (const part of parts) {
+        const nomeNormalizado = normalizeString(part);
+        const area = await tx.areaConhecimento.upsert({
+            where: { nomeNormalizado },
+            update: {
+                areaPaiId: currentParentId || undefined
+            },
+            create: {
+                nome: part,
+                nomeNormalizado,
+                areaPaiId: currentParentId
+            }
+        });
+        currentParentId = area.id;
+        leafArea = area;
+    }
+    return leafArea;
+}
 
 export async function insertInstituicao(data: { nome: string; uf: string; sigla: string }) {
     return await prisma.$transaction(async (tx) => {
@@ -44,11 +69,12 @@ export async function createResearchers(data: { nome: string; lattesId: string; 
     });
 }
 
+
 /**
- * Cria ou recupera uma palavra-chave normalizada (em caixa alta)
+ * Cria ou recupera uma palavra-chave normalizada
  */
 export async function upsertPalavraChave(tx: any, termo: string) {
-    const termoNormalizado = termo.trim().toUpperCase();
+    const termoNormalizado = normalizeString(termo);
     return await tx.palavraChave.upsert({
         where: { termoNormalizado },
         update: {},
@@ -60,10 +86,10 @@ export async function upsertPalavraChave(tx: any, termo: string) {
 }
 
 /**
- * Cria ou recupera um setor de aplicação normalizado (em caixa alta)
+ * Cria ou recupera um setor de aplicação normalizado
  */
 export async function upsertSetorAplicacao(tx: any, nome: string) {
-    const nomeNormalizado = nome.trim().toUpperCase();
+    const nomeNormalizado = normalizeString(nome);
     return await tx.setorAplicacao.upsert({
         where: { nomeNormalizado },
         update: {},
@@ -113,25 +139,47 @@ export async function createLinhaPesquisa(
         });
     }
 
+    const uniquePcIds = new Set<string>();
     for (const termo of palavras) {
         if (!termo.trim()) continue;
         const pc = await upsertPalavraChave(tx, termo);
-        await tx.linhaPesquisaPalavraChave.create({
-            data: {
+        uniquePcIds.add(pc.id);
+    }
+    for (const pcId of uniquePcIds) {
+        await tx.linhaPesquisaPalavraChave.upsert({
+            where: {
+                linhaPesquisaId_palavraChaveId: {
+                    linhaPesquisaId: linha.id,
+                    palavraChaveId: pcId
+                }
+            },
+            update: {},
+            create: {
                 linhaPesquisaId: linha.id,
-                palavraChaveId: pc.id
+                palavraChaveId: pcId
             }
         });
     }
 
     // 3. Associa os Setores de Aplicação
+    const uniqueSaIds = new Set<string>();
     for (const nome of setores) {
         if (!nome.trim()) continue;
         const sa = await upsertSetorAplicacao(tx, nome);
-        await tx.linhaPesquisaSetorAplicacao.create({
-            data: {
+        uniqueSaIds.add(sa.id);
+    }
+    for (const saId of uniqueSaIds) {
+        await tx.linhaPesquisaSetorAplicacao.upsert({
+            where: {
+                linhaPesquisaId_setorAplicacaoId: {
+                    linhaPesquisaId: linha.id,
+                    setorAplicacaoId: saId
+                }
+            },
+            update: {},
+            create: {
                 linhaPesquisaId: linha.id,
-                setorAplicacaoId: sa.id
+                setorAplicacaoId: saId
             }
         });
     }

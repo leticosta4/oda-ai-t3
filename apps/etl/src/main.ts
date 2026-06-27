@@ -5,7 +5,7 @@ import path from 'path';
 dotenv.config({
   path: path.resolve(__dirname, "../../../.env"),
 });
-import { DGP_DIR, LATTES_DIR } from './commom/config';
+import { DGP_DIR, LATTES_DIR, PROCESSED_DATA_DIR } from './commom/config';
 import { runGroupEtl, saveGroupToDb } from './dgpEtl';
 import { runPesquisadorEtl, saveLattesToDb } from './lattesEtl';
 
@@ -24,20 +24,42 @@ function startWatcher() {
     watcher.on('add', (filePath) => {
         if (!filePath.endsWith('.json')) return;
         
-        const content = fs.readFileSync(filePath, 'utf-8');
         try {
-            const data = JSON.parse(content);
             if (filePath.includes('dgp')) {
-                saveGroupToDb(data);
+                runGroupEtl(filePath);
             } else if (filePath.includes('lattes')) {
-                saveLattesToDb(data);
+                runPesquisadorEtl(filePath);
             }
-        } catch (e) {
-            console.error(`[ETL] Arquivo corrompido: ${filePath}`);
+        } catch (e: any) {
+            console.error(`[ETL] Erro ao processar arquivo no watcher ${filePath}: ${e.message}`);
         }
     });
 
     console.log('[ETL] Modo Watcher ativo. Aguardando arquivos...');
+}
+
+function findGroupFile(idOrPath: string): string {
+    if (fs.existsSync(idOrPath) && fs.statSync(idOrPath).isFile()) {
+        return path.resolve(idOrPath);
+    }
+    const fileName = idOrPath.endsWith('.json') ? idOrPath : `${idOrPath}.json`;
+    const rawPath = path.join(DGP_DIR, fileName);
+    if (fs.existsSync(rawPath)) return rawPath;
+    const processedPath = path.join(PROCESSED_DATA_DIR, 'dgp', fileName);
+    if (fs.existsSync(processedPath)) return processedPath;
+    throw new Error(`Arquivo de grupo não encontrado para o ID ou Caminho: "${idOrPath}"`);
+}
+
+function findLattesFile(idOrPath: string): string {
+    if (fs.existsSync(idOrPath) && fs.statSync(idOrPath).isFile()) {
+        return path.resolve(idOrPath);
+    }
+    const fileName = idOrPath.endsWith('.json') ? idOrPath : `${idOrPath}.json`;
+    const rawPath = path.join(LATTES_DIR, fileName);
+    if (fs.existsSync(rawPath)) return rawPath;
+    const processedPath = path.join(PROCESSED_DATA_DIR, 'lattes', fileName);
+    if (fs.existsSync(processedPath)) return processedPath;
+    throw new Error(`Arquivo de currículo Lattes não encontrado para o ID ou Caminho: "${idOrPath}"`);
 }
 
 async function main() {
@@ -53,24 +75,26 @@ async function main() {
         switch (command) {
             case 'grupo':
             case 'group': {
-                const jsonPath = args[1];
-                if (!jsonPath) {
-                    console.error("Erro: Caminho do arquivo JSON do grupo não especificado.");
-                    console.log("Uso: pnpm start grupo <caminho_do_json>");
+                const idOrPath = args[1];
+                if (!idOrPath) {
+                    console.error("Erro: ID DGP ou Caminho do arquivo JSON do grupo não especificado.");
+                    console.log("Uso: pnpm start grupo <id_dgp_ou_caminho>");
                     process.exit(1);
                 }
-                await runGroupEtl(jsonPath);
+                const resolvedPath = findGroupFile(idOrPath);
+                await runGroupEtl(resolvedPath);
                 break;
             }
             case 'pesquisador':
             case 'lattes': {
-                const jsonPath = args[1];
-                if (!jsonPath) {
-                    console.error("Erro: Caminho do arquivo JSON do pesquisador não especificado.");
-                    console.log("Uso: pnpm start pesquisador <caminho_do_json>");
+                const idOrPath = args[1];
+                if (!idOrPath) {
+                    console.error("Erro: ID Lattes ou Caminho do arquivo JSON do pesquisador não especificado.");
+                    console.log("Uso: pnpm start pesquisador <id_lattes_ou_caminho>");
                     process.exit(1);
                 }
-                await runPesquisadorEtl(jsonPath);
+                const resolvedPath = findLattesFile(idOrPath);
+                await runPesquisadorEtl(resolvedPath);
                 break;
             }
             default:

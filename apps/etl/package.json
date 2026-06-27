@@ -7,12 +7,14 @@
     "start": "ts-node src/main.ts",
     "build": "tsc",
     "etl:grupo": "ts-node src/main.ts grupo",
-    "etl:pesquisador": "ts-node src/main.ts pesquisador"
+    "etl:pesquisador": "ts-node src/main.ts pesquisador",
+    "etl:all": "ts-node src/run-all.ts"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
-    "@oda/database": "workspace:*"
+    "@oda/database": "workspace:*",
+    "@oda/shared-types": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

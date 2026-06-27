@@ -1,167 +1,291 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { prismaConfig, PrismaClient } from '@oda/database';
-import { LATTES_DIR } from './commom/config';
+import { prismaConfig, PrismaClient, TipoPesquisador, FormacaoAcademica } from '@oda/database';
+import { LATTES_DIR, PROCESSED_DATA_DIR } from './commom/config';
 import { runPesquisadorEtl } from './lattesEtl';
+import { createLinhaPesquisa, getOrCreateAreaConhecimentoHierarchy } from './commom/database';
 
 const prisma = new PrismaClient(prismaConfig);
 
-/**
- * Lógica de persistência para Grupos de Pesquisa (DGP)
- */
 export async function saveGroupToDb(data: any) {
-    const dgpId = data.id_dgp;
-    
+    const dgpId = data.idDgp;
+    let grupoId = "";
+
     try {
-        await prisma.$transaction(async (tx) => {
-            // 1. Instituição
-            let instName = data.instituicao || "Instituição Desconhecida";
+        const grupo = await prisma.$transaction(async (tx) => {
+            const instSigla = await tx.filaExtracaoGrupo.findFirst({where: { dgpId }})
+            const instClean = data.instituicao.replace(instSigla, "").replace(/-\s*$/, "")
+            let instName = instClean || "Instituição Desconhecida";
             let instituicao = await tx.instituicao.findFirst({
                 where: { nome: { contains: instName, mode: 'insensitive' } }
             });
 
             if (!instituicao) {
+                const filaGrupo = await tx.filaExtracaoGrupo.findFirst({ where: { dgpId } });
+                const sigla = filaGrupo?.instituicao?.trim() || "INST";
                 const estado = await tx.estado.findUnique({
                     where: { sigla: 'BA' }
                 });
                 instituicao = await tx.instituicao.create({
                     data: {
-                        nome: instName,
-                        sigla: instName.substring(0, 10).toUpperCase(),
+                        nome: instName.trim(),
+                        sigla: sigla,
                         estadoId: estado?.id || null
                     }
                 });
             }
 
-            // 2. Grupo
-            const anoStr = data.ano_formacao?.replace(/\D/g, '');
+            const anoStr = data.anoFormacao?.replace(/\D/g, '');
             const ano = anoStr ? parseInt(anoStr, 10) : null;
 
             const grupo = await tx.grupoPesquisa.upsert({
                 where: { dgpId },
                 update: {
-                    nome: data.nome,
+                    nome: data.nome.trim(),
                     anoFormacao: ano,
-                    areaPredominante: data.area || 'N/A',
-                    repercussao: data.repercussao || null,
+                    areaPredominante: data.areaPredominante?.trim() || 'N/A',
+                    repercussao: data.repercussao?.trim() || null,
                     instituicaoId: instituicao.id,
                 },
                 create: {
                     dgpId,
-                    nome: data.nome,
+                    nome: data.nome.trim(),
                     anoFormacao: ano,
-                    areaPredominante: data.area || 'N/A',
-                    repercussao: data.repercussao || null,
+                    areaPredominante: data.areaPredominante?.trim() || 'N/A',
+                    repercussao: data.repercussao?.trim() || null,
                     instituicaoId: instituicao.id,
                 }
             });
 
-            // 3. Membros
-            for (const membro of data.membros) {
-                if (!membro.nome) continue;
-                
-                let pesquisador = null;
-                if (membro.lattes) {
-                    pesquisador = await tx.pesquisador.findUnique({ where: { lattesId: membro.lattes } });
-                }
-
-                if (!pesquisador) {
-                    const existing = await tx.pesquisador.findFirst({ where: { nome: membro.nome } });
-                    if (existing) {
-                        pesquisador = existing;
-                    } else {
-                        pesquisador = await tx.pesquisador.create({
-                            data: {
-                                nome: membro.nome,
-                                lattesId: membro.lattes || null,
-                                tipo: 'PESQUISADOR',
-                                formacaoAcademica: 'DOUTORADO'
-                            }
-                        });
-                    }
-                }
-
-                await tx.membroGrupo.upsert({
+            // Parse and link areaConhecimento
+            const leafArea = await getOrCreateAreaConhecimentoHierarchy(tx, data.area || data.areaPredominante);
+            if (leafArea) {
+                await tx.grupoPesquisaAreaConhecimento.upsert({
                     where: {
-                        pesquisadorId_grupoId: {
-                            pesquisadorId: pesquisador.id,
-                            grupoId: grupo.id
+                        grupoId_areaId: {
+                            grupoId: grupo.id,
+                            areaId: leafArea.id
                         }
                     },
                     update: {},
                     create: {
-                        pesquisadorId: pesquisador.id,
-                        grupoId: grupo.id
-                    }
-                });
-            }
-
-            // 4. Linhas de Pesquisa
-            await tx.membroLinhaPesquisa.deleteMany({ where: { linhaPesquisa: { grupoId: grupo.id } } });
-            await tx.linhaPesquisaPalavraChave.deleteMany({ where: { linhaPesquisa: { grupoId: grupo.id } } });
-            await tx.linhaPesquisaSetorAplicacao.deleteMany({ where: { linhaPesquisa: { grupoId: grupo.id } } });
-            await tx.linhaPesquisa.deleteMany({ where: { grupoId: grupo.id } });
-
-            for (const linha of data.linhas) {
-                if (!linha.nome) continue;
-                await tx.linhaPesquisa.create({
-                    data: {
-                        dgpId: linha.dgp_id || null,
-                        titulo: linha.nome,
-                        objetivo: linha.objetivo,
                         grupoId: grupo.id,
+                        areaId: leafArea.id
                     }
                 });
             }
+
+            return grupo;
+        }, { timeout: 10000 });
+
+        grupoId = grupo.id;
+        console.log(`[ETL] 🏢 Grupo "${grupo.nome}" (ID: ${grupoId}) inserido e confirmado.`);
+
+        if (data.linhas && Array.isArray(data.linhas)) {
+            await prisma.$transaction(async (tx) => {
+                await tx.membroLinhaPesquisa.deleteMany({ where: { linhaPesquisa: { grupoId } } });
+                await tx.linhaPesquisaPalavraChave.deleteMany({ where: { linhaPesquisa: { grupoId } } });
+                await tx.linhaPesquisaSetorAplicacao.deleteMany({ where: { linhaPesquisa: { grupoId } } });
+                await tx.linhaPesquisa.deleteMany({ where: { grupoId } });
+
+                for (const linha of data.linhas) {
+                    if (!linha.nome) continue;
+
+                    const palavras = linha.palavrasChave || [];
+                    const setores = linha.setoresAplicacao || [];
+
+                    const novaLinha = await createLinhaPesquisa(
+                        tx,
+                        grupoId,
+                        linha.nome.trim(),
+                        linha.dgpId || null,
+                        linha.objetivo?.trim() || null,
+                        palavras,
+                        setores
+                    );
+
+                    console.log(`[ETL] 🔬 Linha de Pesquisa criada -> ID: ${novaLinha.id} | Nome: "${novaLinha.titulo}"`);
+                }
+            }, { timeout: 15000 });
+            console.log(`[ETL] ✅ Linhas de pesquisa inseridas e confirmadas.`);
+        }
+
+        if (data.membros && Array.isArray(data.membros)) {
+            await prisma.$transaction(async (tx) => {
+                for (const membro of data.membros) {
+                    console.log("Adicionando membro", membro)
+                    if (!membro.nome) continue;
+                    const cleanLattes = membro.lattes ? membro.lattes.trim() : null;
+                    if(!cleanLattes) continue;
+        
+                    // Mapeamento seguro de TipoPesquisador
+                    const rawTipo = membro.categoriaLattes?.trim().toUpperCase();
+                    const tipoMap: Record<string, TipoPesquisador> = {
+                        'PESQUISADOR': TipoPesquisador.PESQUISADOR,
+                        'LIDER': TipoPesquisador.PESQUISADOR,
+                        'ESTUDANTE': TipoPesquisador.ESTUDANTE,
+                        'TECNICO': TipoPesquisador.TECNICO,
+                        'ESTRANGERO': TipoPesquisador.COLABORADOR_ESTRANGEIRO,
+                        'ESTRANGEIRO': TipoPesquisador.COLABORADOR_ESTRANGEIRO,
+                        'COLABORADOR_ESTRANGEIRO': TipoPesquisador.COLABORADOR_ESTRANGEIRO
+                    };
+                    const tipo = rawTipo ? (tipoMap[rawTipo] || null) : null;
+
+                    // Mapeamento seguro de FormacaoAcademica
+                    const rawFormacao = membro.formacaoAcademica?.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+                    const formacaoMap: Record<string, FormacaoAcademica> = {
+                        'GRADUACAO': FormacaoAcademica.GRADUACAO,
+                        'ESPECIALIZACAO': FormacaoAcademica.ESPECIALIZACAO,
+                        'MESTRADO': FormacaoAcademica.MESTRADO,
+                        'DOUTORADO': FormacaoAcademica.DOUTORADO
+                    };
+                    const formacao = rawFormacao 
+                        ? (formacaoMap[rawFormacao] || FormacaoAcademica.OUTRO) 
+                        : null;
+
+                    const pesquisador = await tx.pesquisador.upsert({
+                        where: { lattesId: cleanLattes },
+                        update: {
+                            formacaoAcademica: formacao,
+                            tipo: tipo
+                        },
+                        create: {
+                            nome: membro.nome.trim(),
+                            lattesId: cleanLattes,
+                            tipo: tipo,
+                            formacaoAcademica: formacao
+                        }
+                    })
+
+                    if (membro.areas && Array.isArray(membro.areas)) {
+                        for (const areaStr of membro.areas) {
+                            if (!areaStr.trim()) continue;
+                            const leafArea = await getOrCreateAreaConhecimentoHierarchy(tx, areaStr);
+                            if (leafArea) {
+                                await tx.pesquisadoresAreaConhecimento.upsert({
+                                    where: {
+                                        pesquisadorId_areaId: {
+                                            pesquisadorId: pesquisador.id,
+                                            areaId: leafArea.id
+                                        }
+                                    },
+                                    update: {},
+                                    create: {
+                                        pesquisadorId: pesquisador.id,
+                                        areaId: leafArea.id
+                                    }
+                                });
+                            }
+                        }
+                    }
+
+                    if (membro.linhasAssociadas && Array.isArray(membro.linhasAssociadas)) {
+                        for (const linhaTitulo of membro.linhasAssociadas) {
+                            if (!linhaTitulo.trim()) continue;
+                            const linha = await tx.linhaPesquisa.findFirst({
+                                where: {
+                                    grupoId: grupoId,
+                                    titulo: { equals: linhaTitulo.trim(), mode: 'insensitive' }
+                                }
+                            });
+                            if (linha) {
+                                await tx.membroLinhaPesquisa.upsert({
+                                    where: {
+                                        linhaPesquisaId_pesquisadorId: {
+                                            linhaPesquisaId: linha.id,
+                                            pesquisadorId: pesquisador.id
+                                        }
+                                    },
+                                    update: {},
+                                    create: {
+                                        linhaPesquisaId: linha.id,
+                                        pesquisadorId: pesquisador.id
+                                    }
+                                });
+                            }
+                        }
+                    }
+                   
+                    await tx.membroGrupo.upsert({
+                        where: {
+                            pesquisadorId_grupoId: {
+                                pesquisadorId: pesquisador.id,
+                                grupoId: grupoId
+                            }
+                        },
+                        update: {},
+                        create: {
+                            pesquisadorId: pesquisador.id,
+                            grupoId: grupoId
+                        }
+                    });
+                }
+            }, { timeout: 15000 });
+            console.log(`[ETL] 👥 Pesquisadores vinculados ao grupo.`);
+        }
+
+        console.log(`[ETL] ✅ Processamento do Grupo ${dgpId} concluído.`);
+        await prisma.filaExtracaoGrupo.update({
+            where: { dgpId },
+            data: { status: 'CONCLUIDO' }
         });
-        console.log(`[ETL] ✅ Grupo ${dgpId} processado.`);
     } catch (e: any) {
         console.error(`[ETL] ❌ Erro ao processar grupo ${dgpId}: ${e.message}`);
     }
 }
 
-/**
- * Executa o ETL de um grupo específico a partir do caminho do seu arquivo JSON.
- * Após concluir o grupo, dispara o ETL para todos os pesquisadores pertencentes ao grupo
- * caso os respectivos arquivos JSON existam na pasta do Lattes.
- */
+
 export async function runGroupEtl(jsonPath: string) {
     console.log(`[ETL] 🔍 Iniciando processamento do arquivo de grupo: ${jsonPath}`);
-    // Resolve o caminho de forma inteligente (tenta absoluto/relativo ao cwd, depois tenta relativo à raiz do monorepo)
     let resolvedPath = path.resolve(jsonPath);
     if (!fs.existsSync(resolvedPath)) {
         const monorepoRootPath = path.resolve(__dirname, '../../..', jsonPath);
         if (fs.existsSync(monorepoRootPath)) {
             resolvedPath = monorepoRootPath;
         } else {
-            throw new Error(`Arquivo não encontrado no caminho especificado: ${jsonPath}`);
+            console.log(`[ETL] ⚠️ Arquivo de grupo não encontrado (pode ter sido processado concorrentemente): ${jsonPath}`);
+            return;
         }
     }
 
     const content = fs.readFileSync(resolvedPath, 'utf-8');
     const groupData = JSON.parse(content);
 
-    // 1. Processa e persiste o grupo no banco
     await saveGroupToDb(groupData);
 
-    // 2. Dispara sequencialmente o ETL dos pesquisadores pertencentes a este grupo
     if (groupData.membros && Array.isArray(groupData.membros)) {
-        const pesquisadores = groupData.membros.filter(
-            (m: any) => m.lattes && (m.categoria_lattes === 'PESQUISADOR' || m.categoria_lattes === 'LIDER')
-        );
+       
+        console.log(`[ETL] Encontrados ${groupData.membros.length} membros elegíveis (Pesquisador/Líder) no grupo.`);
 
-        console.log(`[ETL] Encontrados ${pesquisadores.length} membros elegíveis (Pesquisador/Líder) no grupo.`);
-
-        for (const membro of pesquisadores) {
-            const lattesFileName = `${membro.nome.replace(/\s+/g, '_').toLowerCase()}.json`;
+        for (const membro of groupData.membros) {
+            if (!membro.lattes) continue;
+            const lattesFileName = `${membro.lattes.trim()}.json`;
             const lattesFilePath = path.join(LATTES_DIR, lattesFileName);
-
+            console.log(lattesFilePath)
             if (fs.existsSync(lattesFilePath)) {
                 console.log(`[ETL] 👤 Iniciando ETL encadeado do pesquisador: ${membro.nome}`);
                 await runPesquisadorEtl(lattesFilePath);
-            } else {
-                console.log(`[ETL] ⚠️ Arquivo Lattes para ${membro.nome} não encontrado em ${lattesFilePath}. Pulando.`);
             }
         }
+    }
+
+    // Move o JSON do grupo para a pasta processed-data
+    const groupFileName = path.basename(resolvedPath);
+    const processedDgpDir = path.join(PROCESSED_DATA_DIR, 'dgp');
+    if (!fs.existsSync(processedDgpDir)) fs.mkdirSync(processedDgpDir, { recursive: true });
+    const destGroupPath = path.join(processedDgpDir, groupFileName);
+    if (resolvedPath !== destGroupPath) {
+        try {
+            if (fs.existsSync(resolvedPath)) {
+                fs.renameSync(resolvedPath, destGroupPath);
+                console.log(`[ETL] 📁 JSON Grupo ${groupFileName} movido para ${destGroupPath}`);
+            } else {
+                console.log(`[ETL] 📁 JSON Grupo ${groupFileName} já foi movido por outro processo.`);
+            }
+        } catch (renameError: any) {
+            console.warn(`[ETL] ⚠️ Não foi possível mover o arquivo Grupo ${groupFileName}: ${renameError.message}`);
+        }
+    } else {
+        console.log(`[ETL] 📁 JSON Grupo ${groupFileName} já está na pasta processed-data.`);
     }
 }
