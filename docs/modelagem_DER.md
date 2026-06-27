@@ -32,8 +32,7 @@ entity "area_conhecimento" as AreaConhecimento {
   * id : uuid
   --
   * nome : string
-  codigo : string <<unique>>
-  nivel : int
+  * nome_normalizado : string <<unique>>
   area_pai_id : uuid
   * criado_em : datetime
   * atualizado_em : datetime
@@ -47,7 +46,6 @@ entity "grupo_pesquisa" as GrupoPesquisa {
   ano_formacao : int
   * area_predominante : string
   repercussao : text
-  area_conhecimento_id : uuid
   * situacao : situacao
   * instituicao_id : uuid
   * criado_em : datetime
@@ -73,6 +71,20 @@ entity "pesquisador" as Pesquisador {
   formacao_academica : formacao_academica
   * criado_em : datetime
   * atualizado_em : datetime
+}
+
+entity "grupo_pesquisa_area_conhecimento" as GrupoPesquisaAreaConhecimento {
+  * grupo_id : uuid
+  * area_conhecimento_id : uuid
+  --
+  * criado_em : datetime
+}
+
+entity "pesquisador_area_conhecimento" as PesquisadorAreaConhecimento {
+  * pesquisador_id : uuid
+  * area_conhecimento_id : uuid
+  --
+  * criado_em : datetime
 }
 
 entity "membro_grupo" as MembroGrupo {
@@ -272,7 +284,10 @@ enum "acao_coleta" as AcaoColeta {
 
 Estado ||--o{ Instituicao
 Instituicao ||--o{ GrupoPesquisa
-AreaConhecimento ||--o{ GrupoPesquisa
+GrupoPesquisa ||--o{ GrupoPesquisaAreaConhecimento
+AreaConhecimento ||--o{ GrupoPesquisaAreaConhecimento
+Pesquisador ||--o{ PesquisadorAreaConhecimento
+AreaConhecimento ||--o{ PesquisadorAreaConhecimento
 AreaConhecimento ||--o{ AreaConhecimento : subareas
 GrupoPesquisa ||--o{ LinhaPesquisa
 GrupoPesquisa ||--o{ MembroGrupo

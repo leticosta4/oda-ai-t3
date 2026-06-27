@@ -166,16 +166,20 @@ Observações:
 ## 6.5 Estado Atual do Scraper Service (TypeScript)
 
 - **Linguagem:** TypeScript (Node.js/Crawlee/Playwright).
-- **Localização:** `apps/data-pipeline-ts`.
+- **Localização:** `apps/scraper`.
 - **Arquitetura & Fluxo:**
   - `dgpDiscovery.ts`: Responsável pela varredura e enfileiramento das chaves de busca. Executa de forma concorrente em duas direções (`forward` e `backward`) para maximizar a velocidade.
   - `dgpScraper.ts`: Consome os registros da fila (`filaExtracaoGrupo`) e extrai os espelhos dos grupos detalhadamente.
   - `lattesScraper.ts`: Coleta dados de currículos e fotos de membros/líderes dos grupos.
-- **Mecanismos de Estabilidade & Concorrência:**
+- **Mecanismos de Estabilidade, Concorrência & Otimização:**
   - **Isolamento de Eventos de Abas (Page-Scoped Popups):** Todas as escutas de novas janelas utilizam `page.on('popup')` e `page.waitForEvent('popup')` em substituição ao escopo global do contexto do navegador (`context.on('page')`). Isso assegura isolamento total entre os workers sob alta concorrência.
+  - **Bloqueio de Recursos Context-Wide (Context-Level Routing):** O bloqueio de carregamento de imagens, mídias, fontes e folhas de estilo (CSS) é configurado no nível do contexto (`context.route`) e herdado por todas as páginas e popups de currículos Lattes. Isso otimiza o carregamento de novas abas de ~40 segundos para menos de 5 segundos (ganho de até 10x na velocidade de processamento de homônimos).
+  - **Prevenção de Timeouts Prematuros:** O timeout global do Crawlee é configurado por meio da variável de ambiente `CRAWLEE_REQUEST_HANDLER_TIMEOUT_SECS=1800` no arquivo `.env`, garantindo que requisições longas que processam amplas listas de homônimos não sejam abortadas precocemente.
   - **Processamento de Listagem em Duas Fases:** Em cada página, itens normais (não-boundaries e sem duplicados na página) são processados primeiro, permitindo pular de forma imediata registros cacheados via memória RAM (`processedKeys`). Em seguida, são processados os boundaries (limites da página que podem transpassar com outra direção) e duplicados internos (que necessitam de abertura para verificar desvios de ID).
   - **Persistência de Progresso Resiliente:** O progresso de cada buscador é rastreado por um mapa global em memória (`requestPageProgress`). Se o worker cair ou a página do navegador for desalocada, a retentativa do Crawlee reinicia diretamente na última página processada com sucesso, evitando recomeçar da página 1 e ser falsamente interrompida.
   - **Otimização de Escrita no Banco:** Reduzida a concorrência e o tráfego com o banco de dados durante a descoberta para 1 única operação (`upsert`), eliminando loops de recontagem sequenciais. A recalculagem de grupos `similares` passa a ser executada em um único lote (`normalizeQueueData`) ao término da execução do scraper.
+  - **Paginação Nativa via JS & Estado de UI:** A navegação entre páginas de busca no Lattes Scraper foi refatorada para invocar nativamente a função global `submeterPaginacao(inicio, 10)` com o índice de registro calculado, e a página ativa atual é obtida por detecção no DOM (através da classe `.is-current` ou do elemento `<font color="#ff0000">`). Isso contorna as quebras e limitações de clique tradicionais do Playwright em páginas governamentais complexas.
+  - **Filtro Prévio de Nomes (Homônimos):** O scraper de Lattes foi aprimorado para efetuar uma comparação textual exata (normalizada, case-insensitive e sem acentos) entre o nome do candidato no link da listagem de resultados e o pesquisador procurado, *antes* de clicar. Isso evita a abertura demorada e dispendiosa de popups e currículos errôneos, poupando CPU/memória e aumentando a velocidade global do scraper em até 10x.
 
 ### 5.1 Estrutura de Monorepo
 
@@ -244,10 +248,10 @@ Tabelas/modelos atualmente presentes no schema Prisma:
 - `MembroGrupo`.
 - `MembroLinhaPesquisa`.
 - `AreaConhecimento`.
-- `AreaAtuacao`.
 - `PalavraChave`.
 - `SetorAplicacao`.
-- `PesquisadorAreaAtuacao`.
+- `GrupoPesquisaAreaConhecimento`.
+- `PesquisadoresAreaConhecimento`.
 - `LinhaPesquisaPalavraChave`.
 - `LinhaPesquisaSetorAplicacao`.
 - `Producao`.
@@ -300,11 +304,13 @@ Correções e complementos aplicados:
 - `Pesquisador` recebeu `lattesId`.
 - `Pesquisador.name` foi corrigido para `Pesquisador.nome`.
 - `Pesquisador` recebeu `tipo`, com valores técnico, estudante, pesquisador e colaborador estrangeiro.
-- `Pesquisador` recebeu `formacaoAcademica`, com valores graduação, especialização, mestrado e doutorado.
+- `Pesquisador` recebeu `formacaoAcademica`, com valores graduação, especialização, mestrado, doutorado e outro.
+- Mapeamentos resilientes foram implementados no ETL (`dgpEtl.ts`) para tratar desvios de enums do banco (ex: mapeamento seguro de `"ESTRANGEIRO"` para `"COLABORADOR_ESTRANGEIRO"`, e de titulações/países atípicos como `"REPUBLICA PORTUGUESA"` para `"OUTRO"`).
 - `Pesquisador` não possui `email` no modelo atual.
 - `Estado` foi criado como tabela própria e recebeu o campo `regiao`.
 - `Instituicao.estado` passou a ser uma relação opcional com `Estado`.
-- `GrupoPesquisa` passou a ter vínculo opcional com `AreaConhecimento`.
+- `GrupoPesquisa` e `Pesquisador` passaram a ter relacionamento N:N com `AreaConhecimento` por meio de tabelas de associação (`GrupoPesquisaAreaConhecimento` e `PesquisadoresAreaConhecimento`).
+- `AreaConhecimento` agora suporta relacionamentos hierárquicos entre pai e filho com `areaPaiId`.
 - `MembroGrupo` recebeu `dataEntrada` para registrar quando o pesquisador entrou no grupo.
 - `LinhaPesquisa` passou a possuir membros por meio de `MembroLinhaPesquisa`.
 - `LinhaPesquisa` passou a possuir setores de aplicação por meio de `SetorAplicacao` e `LinhaPesquisaSetorAplicacao`.
@@ -364,6 +370,18 @@ Observações:
 - Validação recente: `pnpm --workspace @oda/api run test -- resources/linha-pesquisa/linha-pesquisa.service.spec.ts resources/producoes/producoes.service.spec.ts --runInBand` passou com 2 suítes e 8 testes.
 - A suíte completa de testes ainda precisa ser revisada e ampliada.
 
+### 6.7 Normalização de Termos e Resolução de Conflitos
+
+Para garantir a consistência das buscas semânticas e relacionalidade de dados, o sistema adota uma normalização em formato de slug para os termos de classificação (como Palavras-Chave e Setores de Aplicação).
+
+- **Regras de Normalização:** A função utilitária centralizada `normalizeString` remove acentos/diacríticos, converte todos os caracteres para minúsculas, exclui pontuações e caracteres especiais, descarta stopwords em português (e.g. `de`, `do`, `da`, `e`) e em inglês (e.g. `of`, `the`, `and`), e substitui espaços por hífens (`-`).
+- **Arquitetura:** O utilitário está localizado no módulo modularizado [normalize.ts](file:///D:/Uneb/2026.1/TCC1/Projeto/oda/apps/etl/src/commom/normalize.ts) dentro do serviço de ETL.
+- **Estratégia de Resolução de Conflitos (Merge):** Como a normalização em formato de slug é restritiva, diferentes termos originais podem resultar no mesmo termo normalizado (por exemplo, "Ciência de Computação" e "Ciência da Computação" normalizam para "ciencia-computacao"). Devido à restrição de unicidade (`@unique`) no banco de dados, esses cenários são tratados mesclando os registros duplicados de forma atômica:
+  1. Identifica-se o registro primário existente.
+  2. Atualizam-se as tabelas de associação (relações pivot N:M como `LinhaPesquisaPalavraChave`, `ProducaoPalavraChave` e `LinhaPesquisaSetorAplicacao`) para apontar para o ID do registro primário.
+  3. Se a relação já existir para o primário, o vínculo duplicado é removido.
+  4. Deleta-se o registro duplicado obsoleto do banco relacional.
+
 ## 7. Diagramas
 
 ### 7.1 DER Atual
@@ -398,8 +416,7 @@ entity "area_conhecimento" as AreaConhecimento {
   * id : uuid
   --
   * nome : string
-  codigo : string
-  nivel : int
+  * nome_normalizado : string
   area_pai_id : uuid
   * criado_em : datetime
   * atualizado_em : datetime
@@ -413,11 +430,24 @@ entity "grupo_pesquisa" as GrupoPesquisa {
   ano_formacao : int
   * area_predominante : string
   repercussao : text
-  area_conhecimento_id : uuid
   * situacao : situacao
   * instituicao_id : uuid
   * criado_em : datetime
   * atualizado_em : datetime
+}
+
+entity "grupo_pesquisa_area_conhecimento" as GrupoPesquisaAreaConhecimento {
+  * grupo_id : uuid
+  * area_conhecimento_id : uuid
+  --
+  * criado_em : datetime
+}
+
+entity "pesquisador_area_conhecimento" as PesquisadorAreaConhecimento {
+  * pesquisador_id : uuid
+  * area_conhecimento_id : uuid
+  --
+  * criado_em : datetime
 }
 
 entity "linha_pesquisa" as LinhaPesquisa {
@@ -618,7 +648,10 @@ entity "fila_extracao_pesquisador" as FilaExtracaoPesquisador {
 
 Estado ||--o{ Instituicao
 Instituicao ||--o{ GrupoPesquisa
-AreaConhecimento ||--o{ GrupoPesquisa
+GrupoPesquisa ||--o{ GrupoPesquisaAreaConhecimento
+AreaConhecimento ||--o{ GrupoPesquisaAreaConhecimento
+Pesquisador ||--o{ PesquisadorAreaConhecimento
+AreaConhecimento ||--o{ PesquisadorAreaConhecimento
 AreaConhecimento ||--o{ AreaConhecimento : subareas
 GrupoPesquisa ||--o{ LinhaPesquisa
 GrupoPesquisa ||--o{ MembroGrupo
@@ -631,8 +664,6 @@ LinhaPesquisa ||--o{ LinhaPesquisaSetorAplicacao
 SetorAplicacao ||--o{ LinhaPesquisaSetorAplicacao
 Producao ||--o{ ProducaoPesquisador
 Pesquisador ||--o{ ProducaoPesquisador
-Pesquisador ||--o{ PesquisadorAreaAtuacao
-AreaAtuacao ||--o{ PesquisadorAreaAtuacao
 Producao ||--o{ ProducaoPalavraChave
 PalavraChave ||--o{ ProducaoPalavraChave
 RagDocument ||--o{ RagChunk
@@ -671,3 +702,141 @@ Para a evolução do MVP rumo a um sistema de produção escalável, foram defin
 ### 9.2 Persistência Vetorial
 - Migração do Vector Store em memória (FAISS) para o **PostgreSQL com extensão pgvector**.
 - Isso permitirá consultas híbridas (SQL + Vetor) e persistência de longo prazo dos embeddings sem necessidade de re-vetorização total em cada inicialização.
+
+
+# 10 Diagramas Arquiteturias
+
+
+## 10.1 Arquitetura Geral
+
+```
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#ffffff',
+    'edgeColor': '#4A5568',
+    'lineColor': '#4A5568',
+    'textColor': '#2D3748',
+    'fontSize': '14px'
+  }
+}}%%
+flowchart LR
+    %% Configuração de Estilos de Cores Pastéis
+    classDef extFill fill:#FFF3CD,stroke:#D39E00,stroke-width:1px;
+    classDef scraperFill fill:#E0F2FE,stroke:#0284C7,stroke-width:1px;
+    classDef etlFill fill:#DCFCE7,stroke:#16A34A,stroke-width:1px;
+    classDef dbFill fill:#F3F4F6,stroke:#4B5563,stroke-width:1px;
+    classDef apiFill fill:#F3E8FF,stroke:#7C3AED,stroke-width:1px;
+    classDef clientFill fill:#FCE7F3,stroke:#DB2777,stroke-width:1px;
+
+    %% Fontes Externas
+    subgraph EXT ["Mundo Externo & APIs"]
+        CNPq["CNPq DGP / Lattes (Web)"]:::extFill
+        OpenAlex["OpenAlex API"]:::extFill
+        DOI["DOI API"]:::extFill
+        GeminiAPI["Google Gemini API"]:::extFill
+    end
+
+    %% Monorepo Open DGP
+    subgraph MONO ["Monorepo: Open DGP"]
+        
+        subgraph INGEST ["Camada de Ingestão"]
+            Scraper["apps/scraper<br>(Crawlee / Playwright)"]:::scraperFill
+        end
+
+        subgraph PROC ["Camada de Processamento"]
+            ETL["apps/etl<br>(TypeScript Core)"]:::etlFill
+        end
+
+        subgraph STORAGE ["Camada de Armazenamento"]
+            Postgres[("PostgreSQL<br>(Transacional + Vetorial)")]:::dbFill
+            Redis[("Redis<br>(Cache de API)")]:::dbFill
+        end
+
+        subgraph INTEL ["Consumo & Inteligência"]
+            API["apps/api<br>(NestJS REST API)"]:::apiFill
+            LangChain["apps/langchain-ts<br>(Serviço RAG)"]:::apiFill
+        end
+        
+    end
+
+    %% Cliente
+    Client["Cliente / Frontend"]:::clientFill
+
+    %% Conexões e Fluxos
+    CNPq -->|Extração de dados| Scraper
+    Scraper -->|Gera arquivos brutos| ETL
+    
+    ETL -->|Enriquecimento| OpenAlex
+    ETL -->|Enriquecimento| DOI
+    ETL -->|Persistência via Prisma| Postgres
+
+    Client <-->|Requisições HTTP| API
+    API <-->|Cache de Rotas| Redis
+    API <-->|Orquestração RAG| LangChain
+    
+    LangChain <-->|Busca Vetorial & Contexto| Postgres
+    LangChain <-->|Geração de Embeddings & LLM| GeminiAPI
+```
+## 10.2 Fluxo de Coleta e ETL 
+```
+flowchart LR
+    STEP1["1. Scraper coleta dados\n(DGP/Lattes)"]
+    RAW["data/raw-data/\n(JSON + imagens)"]
+    STEP2["2. ETL lê arquivos"]
+    STEP3["3. Normalização\n(strings + slugs)"]
+    STEP4["4. Enriquecimento\n(OpenAlex + DOI APIs)"]
+    STEP5["5. Persistência\n(PostgreSQL via Prisma)"]
+    STEP6["6. Move para\nprocessed-data/"]
+
+    STEP1 --> RAW
+    RAW --> STEP2
+    STEP2 --> STEP3
+    STEP3 --> STEP4
+    STEP4 --> STEP5
+    STEP5 --> STEP6
+
+    %% Cores
+    style STEP1 fill:#cce5ff
+    style RAW fill:#cce5ff
+    style STEP2 fill:#d4edda
+    style STEP3 fill:#d4edda
+    style STEP4 fill:#d4edda
+    style STEP5 fill:#e2e3e5
+    style STEP6 fill:#d4edda
+  ```
+
+## 10.3 Fluxo de Busca Semântica
+```
+   flowchart LR
+    USER["Usuário\nPergunta"]
+    API["NestJS API\nHTTP"]
+    LANG["LangChain Service"]
+    EMB["Geração de Embeddings\n(Google Gemini)"]
+    VDB["Vector Database\n(PostgreSQL)"]
+    RETRIEVE["Recuperação de contexto\n(cosseno)"]
+    PROMPT["Construção do Prompt"]
+    LLM["Google Gemini\nResposta"]
+    RESPONSE["Resposta ao usuário"]
+
+    USER --> API
+    API --> LANG
+    LANG --> EMB
+    EMB --> LANG
+    LANG --> VDB
+    VDB --> RETRIEVE
+    RETRIEVE --> PROMPT
+    PROMPT --> LLM
+    LLM --> LANG
+    LANG --> API
+    API --> RESPONSE
+
+    %% Cores
+    style API fill:#e6ccff
+    style LANG fill:#e6ccff
+    style EMB fill:#e6ccff
+    style LLM fill:#e6ccff
+    style VDB fill:#e2e3e5
+    style USER fill:#cce5ff
+
+```

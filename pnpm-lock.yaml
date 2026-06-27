@@ -155,43 +155,6 @@ importers:
         specifier: ^8.20.0
         version: 8.61.1(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
 
-  apps/data-pipeline-ts:
-    dependencies:
-      '@crawlee/playwright':
-        specifier: ^3.17.0
-        version: 3.17.0(playwright@1.61.0)
-      '@oda/database':
-        specifier: workspace:*
-        version: link:../../shared/database
-      '@oda/shared-types':
-        specifier: workspace:*
-        version: link:../../shared/shared-types
-      cheerio:
-        specifier: ^1.0.0
-        version: 1.2.0
-      crawlee:
-        specifier: ^3.17.0
-        version: 3.17.0(@types/node@24.13.2)(playwright@1.61.0)
-      dotenv:
-        specifier: ^16.4.7
-        version: 16.6.1
-      p-limit:
-        specifier: ^7.3.0
-        version: 7.3.0
-      playwright:
-        specifier: ^1.50.1
-        version: 1.61.0
-    devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.2
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@24.13.2)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.7.3
-        version: 5.9.3
-
   apps/etl:
     dependencies:
       '@oda/database':
@@ -268,6 +231,43 @@ importers:
       ts-node-dev:
         specifier: ^2.0.0
         version: 2.0.0(@types/node@24.13.2)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  apps/scraper:
+    dependencies:
+      '@crawlee/playwright':
+        specifier: ^3.17.0
+        version: 3.17.0(playwright@1.61.0)
+      '@oda/database':
+        specifier: workspace:*
+        version: link:../../shared/database
+      '@oda/shared-types':
+        specifier: workspace:*
+        version: link:../../shared/shared-types
+      cheerio:
+        specifier: ^1.0.0
+        version: 1.2.0
+      crawlee:
+        specifier: ^3.17.0
+        version: 3.17.0(@types/node@24.13.2)(playwright@1.61.0)
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      p-limit:
+        specifier: ^7.3.0
+        version: 7.3.0
+      playwright:
+        specifier: ^1.50.1
+        version: 1.61.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.2
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@24.13.2)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
