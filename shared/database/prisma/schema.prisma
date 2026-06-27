@@ -56,8 +56,7 @@ model GrupoPesquisa {
   anoFormacao        Int?              @map("ano_formacao")
   areaPredominante   String            @map("area_predominante")
   repercussao        String?
-  areaConhecimento   AreaConhecimento? @relation(fields: [areaConhecimentoId], references: [id])
-  areaConhecimentoId String?           @map("area_conhecimento_id")
+  areasConhecimento GrupoPesquisaAreaConhecimento[]
   situacao           Situacao          @default(ATIVO)
   instituicao        Instituicao       @relation(fields: [instituicaoId], references: [id])
   instituicaoId      String            @map("instituicao_id")
@@ -99,6 +98,7 @@ enum FormacaoAcademica {
   ESPECIALIZACAO @map("especializacao")
   MESTRADO       @map("mestrado")
   DOUTORADO      @map("doutorado")
+  OUTRO          @map("outro")
 
   @@map("formacao_academica")
 }
@@ -112,33 +112,16 @@ model Pesquisador {
   membrosGrupo         MembroGrupo[]
   membrosLinhaPesquisa MembroLinhaPesquisa[]
   producoes            ProducaoPesquisador[]
-  areasAtuacao         PesquisadorAreaAtuacao[]
+  areasConhecimento    PesquisadoresAreaConhecimento[] 
+  openAlexId           String? @unique @map("open_alex_id")
+  orcidId              String? @unique @map("orcid_id")
+  imageUrl             String? @map("image_url")
+  indexH               Int? @map("index_h")
+  indexI10             Int? @map("index_i_10")
   criadoEm             DateTime                 @default(now()) @map("criado_em")
   atualizadoEm         DateTime                 @updatedAt @map("atualizado_em")
 
   @@map("pesquisador")
-}
-
-model AreaAtuacao {
-  id               String                   @id @default(uuid())
-  nome             String                   @unique
-  nomeNormalizado  String                   @unique @map("nome_normalizado")
-  pesquisadores    PesquisadorAreaAtuacao[]
-  criadoEm         DateTime                 @default(now()) @map("criado_em")
-  atualizadoEm     DateTime                 @updatedAt @map("atualizado_em")
-
-  @@map("area_atuacao")
-}
-
-model PesquisadorAreaAtuacao {
-  pesquisador   Pesquisador @relation(fields: [pesquisadorId], references: [id])
-  pesquisadorId String      @map("pesquisador_id")
-  areaAtuacao   AreaAtuacao @relation(fields: [areaAtuacaoId], references: [id])
-  areaAtuacaoId String      @map("area_atuacao_id")
-  criadoEm      DateTime    @default(now()) @map("criado_em")
-
-  @@id([pesquisadorId, areaAtuacaoId])
-  @@map("pesquisador_area_atuacao")
 }
 
 model MembroGrupo {
@@ -167,18 +150,33 @@ model MembroLinhaPesquisa {
 model AreaConhecimento {
   id             String             @id @default(uuid())
   nome           String
-  codigo         String?            @unique
-  nivel          Int?
+  nomeNormalizado String @unique
   areaPai        AreaConhecimento?  @relation("AreaConhecimentoHierarquia", fields: [areaPaiId], references: [id])
   areaPaiId      String?            @map("area_pai_id")
   subareas       AreaConhecimento[] @relation("AreaConhecimentoHierarquia")
-  gruposPesquisa GrupoPesquisa[]
+  gruposPesquisa GrupoPesquisaAreaConhecimento[]
+  pesquisadores PesquisadoresAreaConhecimento[]
   criadoEm       DateTime           @default(now()) @map("criado_em")
   atualizadoEm   DateTime           @updatedAt @map("atualizado_em")
 
   @@map("area_conhecimento")
 }
-
+model PesquisadoresAreaConhecimento{
+  pesquisador Pesquisador @relation(fields: [pesquisadorId], references: [id])
+  pesquisadorId String @map("pesquisador_id")
+  area AreaConhecimento @relation(fields: [areaId], references: [id])
+  areaId String @map("area_conhecimento_id")
+  @@id([pesquisadorId, areaId])
+  @@map("pesquisador_area_conhecimento")
+}
+model GrupoPesquisaAreaConhecimento{
+  grupo GrupoPesquisa @relation(fields: [grupoId], references: [id])
+  grupoId String @map("grupo_id")
+  area AreaConhecimento @relation(fields: [areaId], references: [id])
+  areaId String @map("area_conhecimento_id")
+  @@id([grupoId, areaId])
+  @@map("grupo_pesquisa_area_conhecimento")
+}
 model PalavraChave {
   id               String                      @id @default(uuid())
   termo            String                      @unique
