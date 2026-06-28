@@ -3,6 +3,8 @@ import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import { CreateAreaConhecimentoDto } from './dto/create-area-conhecimento.dto';
 import { UpdateAreaConhecimentoDto } from './dto/update-area-conhecimento.dto';
+import { FindAllAreaConhecimentoDto } from './dto/find-all-area-conhecimento.dto';
+import { Prisma } from '@oda/database';
 
 const AREA_CONHECIMENTO_LIST_KEY = 'areaconhecimento:list';
 
@@ -25,15 +27,45 @@ export class AreaConhecimentoService {
         });
       }
     
-      async findAll() {
-        return this.cacheManager.wrap(AREA_CONHECIMENTO_LIST_KEY,async () =>
-          await this.prismaService.areaConhecimento.findMany({
-            omit: {
-              criadoEm: true,
-              atualizadoEm: true,
-            },
-          }),
-        );
+      async findAll(query?: FindAllAreaConhecimentoDto) {
+        const where: Prisma.AreaConhecimentoWhereInput = {};
+
+        if (query?.nome) {
+          where.nome = { contains: query.nome, mode: 'insensitive' };
+        }
+
+        if (Object.keys(where).length > 0 || (query && (query.page > 1 || query.size !== 30))) {
+          const [data, totalItems] = await Promise.all([
+            this.prismaService.areaConhecimento.findMany({
+              where,
+              skip: query?.skip,
+              take: query?.take,
+              omit: { criadoEm: true, atualizadoEm: true },
+            }),
+            this.prismaService.areaConhecimento.count({ where }),
+          ]);
+          const size = query?.size ?? 30;
+          const page = query?.page ?? 1;
+          const totalPages = size === 0 ? 1 : Math.ceil(totalItems / size);
+
+          return { data, meta: { page, size, totalItems, totalPages } };
+        }
+
+        return this.cacheManager.wrap(AREA_CONHECIMENTO_LIST_KEY, async () => {
+          const [data, totalItems] = await Promise.all([
+            this.prismaService.areaConhecimento.findMany({
+              skip: query?.skip,
+              take: query?.take,
+              omit: { criadoEm: true, atualizadoEm: true },
+            }),
+            this.prismaService.areaConhecimento.count(),
+          ]);
+          const size = query?.size ?? 30;
+          const page = query?.page ?? 1;
+          const totalPages = size === 0 ? 1 : Math.ceil(totalItems / size);
+
+          return { data, meta: { page, size, totalItems, totalPages } };
+        });
       }
       
       

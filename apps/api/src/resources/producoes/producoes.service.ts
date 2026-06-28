@@ -3,6 +3,8 @@ import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateProducoeDto } from './dto/create-producoe.dto';
 import { UpdateProducoeDto } from './dto/update-producoe.dto';
+import { FindAllProducoesDto } from './dto/find-all-producoes.dto';
+import { Prisma } from '@oda/database';
 
 const PRODUCOES_LIST_CACHE_KEY = 'producoes:list';
 
@@ -55,17 +57,53 @@ export class ProducoesService {
     return producao;
   }
 
-  async findAll() {
-    return await this.cacheManager.wrap(
-      PRODUCOES_LIST_CACHE_KEY,
-      async () =>
-        await this.prismaService.producao.findMany({
-          omit: {
-            criadoEm: true,
-            atualizadoEm: true,
-          },
+  async findAll(query?: FindAllProducoesDto) {
+    const where: Prisma.ProducaoWhereInput = {};
+
+    if (query) {
+      if (query.titulo) {
+        where.titulo = { contains: query.titulo, mode: 'insensitive' };
+      }
+      if (query.ano) {
+        where.ano = query.ano;
+      }
+      if (query.tipo) {
+        where.tipo = query.tipo;
+      }
+    }
+
+    if (Object.keys(where).length > 0 || (query && (query.page > 1 || query.size !== 30))) {
+      const [data, totalItems] = await Promise.all([
+        this.prismaService.producao.findMany({
+          where,
+          skip: query?.skip,
+          take: query?.take,
+          omit: { criadoEm: true, atualizadoEm: true },
         }),
-    );
+        this.prismaService.producao.count({ where }),
+      ]);
+      const size = query?.size ?? 30;
+      const page = query?.page ?? 1;
+      const totalPages = size === 0 ? 1 : Math.ceil(totalItems / size);
+
+      return { data, meta: { page, size, totalItems, totalPages } };
+    }
+
+    return this.cacheManager.wrap(PRODUCOES_LIST_CACHE_KEY, async () => {
+      const [data, totalItems] = await Promise.all([
+        this.prismaService.producao.findMany({
+          skip: query?.skip,
+          take: query?.take,
+          omit: { criadoEm: true, atualizadoEm: true },
+        }),
+        this.prismaService.producao.count(),
+      ]);
+      const size = query?.size ?? 30;
+      const page = query?.page ?? 1;
+      const totalPages = size === 0 ? 1 : Math.ceil(totalItems / size);
+
+      return { data, meta: { page, size, totalItems, totalPages } };
+    });
   }
 
   async findOne(id: string) {

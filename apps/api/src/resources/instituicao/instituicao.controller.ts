@@ -7,10 +7,12 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
+  Query,
 } from '@nestjs/common';
 import { InstituicaoService } from './instituicao.service';
 import { CreateInstituicaoDto } from './dto/create-instituicao.dto';
 import { UpdateInstituicaoDto } from './dto/update-instituicao.dto';
+import { FindAllInstituicaoDto } from './dto/find-all-instituicao.dto';
 
 @Controller('instituicao')
 export class InstituicaoController {
@@ -22,8 +24,8 @@ export class InstituicaoController {
   }
 
   @Get()
-  findAll() {
-    return this.instituicaoService.findAll();
+  findAll(@Query() query: FindAllInstituicaoDto) {
+    return this.instituicaoService.findAll(query);
   }
 
   @Get(':id')

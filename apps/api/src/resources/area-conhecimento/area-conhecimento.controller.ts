@@ -6,10 +6,12 @@ import {
   Patch,
   Param,
   ParseUUIDPipe,
+  Query,
 } from '@nestjs/common';
 import { AreaConhecimentoService } from './area-conhecimento.service';
 import { CreateAreaConhecimentoDto } from './dto/create-area-conhecimento.dto';
 import { UpdateAreaConhecimentoDto } from './dto/update-area-conhecimento.dto';
+import { FindAllAreaConhecimentoDto } from './dto/find-all-area-conhecimento.dto';
 
 @Controller('area-conhecimento')
 export class AreaConhecimentoController {
@@ -21,8 +23,8 @@ export class AreaConhecimentoController {
   }
 
   @Get()
-  findAll() {
-    return this.areaConhecimentoService.findAll();
+  findAll(@Query() query: FindAllAreaConhecimentoDto) {
+    return this.areaConhecimentoService.findAll(query);
   }
 
   @Get(':id')

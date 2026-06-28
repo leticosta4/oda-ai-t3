@@ -85,28 +85,39 @@ export class LinhaPesquisaService {
 
     // Bypass cache if filters or pagination are present (except default pagination)
     if (Object.keys(where).length > 0 || (query && (query.page > 1 || query.size !== 30))) {
-      return await this.prismaService.linhaPesquisa.findMany({
-        where,
-        skip: query?.skip,
-        take: query?.take,
-        omit: {
-          criadoEm: true,
-          atualizadoEm: true,
-        },
-      });
+      const [data, totalItems] = await Promise.all([
+        this.prismaService.linhaPesquisa.findMany({
+          where,
+          skip: query?.skip,
+          take: query?.take,
+          omit: { criadoEm: true, atualizadoEm: true },
+        }),
+        this.prismaService.linhaPesquisa.count({ where }),
+      ]);
+      const size = query?.size ?? 30;
+      const page = query?.page ?? 1;
+      const totalPages = size === 0 ? 1 : Math.ceil(totalItems / size);
+
+      return { data, meta: { page, size, totalItems, totalPages } };
     }
 
     return await this.cacheManager.wrap(
       LINHAS_PESQUISA_LIST_CACHE_KEY,
-      async () =>
-        await this.prismaService.linhaPesquisa.findMany({
-          skip: query?.skip,
-          take: query?.take,
-          omit: {
-            criadoEm: true,
-            atualizadoEm: true,
-          },
-        }),
+      async () => {
+        const [data, totalItems] = await Promise.all([
+          this.prismaService.linhaPesquisa.findMany({
+            skip: query?.skip,
+            take: query?.take,
+            omit: { criadoEm: true, atualizadoEm: true },
+          }),
+          this.prismaService.linhaPesquisa.count(),
+        ]);
+        const size = query?.size ?? 30;
+        const page = query?.page ?? 1;
+        const totalPages = size === 0 ? 1 : Math.ceil(totalItems / size);
+
+        return { data, meta: { page, size, totalItems, totalPages } };
+      },
     );
   }
 
