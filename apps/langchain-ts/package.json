@@ -6,7 +6,8 @@
   "scripts": {
     "start": "ts-node src/main.ts",
     "dev": "ts-node-dev --respawn src/main.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "ingest-db": "ts-node src/scripts/ingestDb.ts"
   },
   "dependencies": {
     "@langchain/community": "^0.3.33",

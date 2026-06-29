@@ -17,7 +17,8 @@
     "scraper:lattes": "pnpm -F @oda/scraper start lattes",
     "etl": "pnpm -F @oda/etl start",
     "etl:grupo": "pnpm -F @oda/etl start grupo",
-    "etl:pesquisador": "pnpm -F @oda/etl start pesquisador"
+    "etl:pesquisador": "pnpm -F @oda/etl start pesquisador",
+    "ingest:db": "pnpm -F @oda/langchain run ingest-db"
   },
   "engines": {
     "node": ">=20"

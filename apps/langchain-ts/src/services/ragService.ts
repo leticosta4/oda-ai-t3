@@ -1,16 +1,18 @@
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
 import { StringOutputParser } from "@langchain/core/output_parsers";
-import { Document } from "@langchain/core/documents";
-import { getVectorStore } from "../vectorstores/pgStore";
+import { PrismaClient, prismaConfig } from '@oda/database';
 import * as dotenv from "dotenv";
 
 dotenv.config({ path: "../../.env" });
 
-const formatDocumentsAsString = (documents: Document[]) => {
-  return documents.map((doc) => doc.pageContent).join("\n\n");
-};
+const prisma = new PrismaClient(prismaConfig);
+
+const embeddings = new OpenAIEmbeddings({
+  openAIApiKey: process.env.OPEN_AI_KEY,
+  modelName: "text-embedding-3-small",
+});
 
 const model = new ChatOpenAI({
   openAIApiKey: process.env.OPEN_AI_KEY,
@@ -31,12 +33,20 @@ const ANSWER_PROMPT = PromptTemplate.fromTemplate(`
   Resposta (em português):`);
 
 export async function askQuestion(question: string, chatHistory: string = "") {
-  const vectorStore = await getVectorStore();
-  const retriever = vectorStore.asRetriever();
+  const [questionVector] = await embeddings.embedDocuments([question]);
+  const vectorStr = `[${questionVector.join(',')}]`;
+  const matchedChunks: any[] = await prisma.$queryRawUnsafe(
+    `SELECT rc.conteudo 
+     FROM rag_chunk rc 
+     ORDER BY rc.embedding <-> $1::vector ASC 
+     LIMIT 5`,
+    vectorStr
+  );
 
+  const context = matchedChunks.map(c => c.conteudo).join('\n\n');
   const chain = RunnableSequence.from([
     {
-      context: retriever.pipe(formatDocumentsAsString),
+      context: () => context,
       question: new RunnablePassthrough(),
     },
     ANSWER_PROMPT,
@@ -44,72 +54,79 @@ export async function askQuestion(question: string, chatHistory: string = "") {
     new StringOutputParser(),
   ]);
 
-  const result = await chain.invoke(question);
-  return result;
+  return await chain.invoke(question);
 }
 
 export async function ingestDocument(content: string, metadata: any = {}) {
-  const vectorStore = await getVectorStore();
-  await vectorStore.addDocuments([
-    {
-      pageContent: content,
-      metadata,
-    },
-  ]);
+  const docId = crypto.randomUUID ? crypto.randomUUID() : require('crypto').randomUUID();
+  const doc = await prisma.ragDocument.create({
+    data: {
+      sourceType: 'PRODUCAO',
+      sourceId: docId,
+      titulo: metadata.titulo || "Documento Ingerido",
+      conteudo: content,
+      metadata
+    }
+  });
+
+  const [vector] = await embeddings.embedDocuments([content]);
+  const vectorStr = `[${vector.join(',')}]`;
+  const chunkId = require('crypto').randomUUID();
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "rag_chunk" ("id", "document_id", "conteudo", "embedding", "ordem", "metadata", "atualizado_em") 
+     VALUES ($1, $2, $3, $4::vector, $5, $6, NOW())`,
+    chunkId, doc.id, content, vectorStr, 0, JSON.stringify(metadata)
+  );
+
   return { success: true };
 }
 
 export async function ingestResearchGroup(data: any) {
-  const documents: any[] = [];
   const nome = data.nome || "Desconhecido";
   const dgpId = data.id_dgp || "";
 
-  // 1. Documento principal do Grupo
-  let grupoContent = `Grupo de Pesquisa: ${nome}\n`;
-  grupoContent += `DGP ID: ${dgpId}\n`;
-  grupoContent += `Instituição: ${data.instituicao || ""}\n`;
-  grupoContent += `Área: ${data.area || ""}\n`;
-  grupoContent += `Ano de Formação: ${data.ano_formacao || ""}\n`;
-  grupoContent += `Repercussão: ${data.repercussao || ""}\n`;
+  let content = `Grupo de Pesquisa: ${nome}\n`;
+  content += `DGP ID: ${dgpId}\n`;
+  content += `Instituição: ${data.instituicao || ""}\n`;
+  content += `Área: ${data.area || ""}\n`;
+  content += `Ano de Formação: ${data.ano_formacao || ""}\n`;
+  content += `Repercussão: ${data.repercussao || ""}\n`;
 
-  documents.push({
-    pageContent: grupoContent,
-    metadata: { type: "grupo", id: dgpId },
+  const doc = await prisma.ragDocument.upsert({
+    where: {
+      sourceType_sourceId: {
+        sourceType: 'GRUPO_PESQUISA',
+        sourceId: dgpId,
+      }
+    },
+    update: {
+      titulo: nome,
+      conteudo: content,
+      metadata: data
+    },
+    create: {
+      sourceType: 'GRUPO_PESQUISA',
+      sourceId: dgpId,
+      titulo: nome,
+      conteudo: content,
+      metadata: data
+    }
   });
 
-  // 2. Linhas de Pesquisa
-  if (data.linhas) {
-    for (const linha of data.linhas) {
-      const lNome = linha.nome || linha.titulo || "";
-      const lObj = linha.objetivo || "";
-      let linhaContent = `Linha de Pesquisa do Grupo ${nome}:\n`;
-      linhaContent += `Nome: ${lNome}\n`;
-      linhaContent += `Objetivo: ${lObj}\n`;
+  await prisma.ragChunk.deleteMany({
+    where: { documentId: doc.id }
+  });
 
-      documents.push({
-        pageContent: linhaContent,
-        metadata: { type: "linha_pesquisa", grupo: nome, grupoId: dgpId },
-      });
-    }
-  }
+  const [vector] = await embeddings.embedDocuments([content]);
+  const vectorStr = `[${vector.join(',')}]`;
+  const chunkId = require('crypto').randomUUID();
 
-  // 3. Pesquisadores
-  if (data.membros) {
-    for (const m of data.membros) {
-      let pesqContent = `Pesquisador do Grupo ${nome}:\n`;
-      pesqContent += `Nome: ${m.nome || ""}\n`;
-      pesqContent += `Lattes ID: ${m.lattes || ""}\n`;
-      pesqContent += `Formação: ${m.formacao_academica || ""}\n`;
-      pesqContent += `Categoria: ${m.categoria_lattes || ""}\n`;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "rag_chunk" ("id", "document_id", "conteudo", "embedding", "ordem", "metadata", "atualizado_em") 
+     VALUES ($1, $2, $3, $4::vector, $5, $6, NOW())`,
+    chunkId, doc.id, content, vectorStr, 0, JSON.stringify(data)
+  );
 
-      documents.push({
-        pageContent: pesqContent,
-        metadata: { type: "pesquisador", grupo: nome, lattes: m.lattes || "" },
-      });
-    }
-  }
-
-  const vectorStore = await getVectorStore();
-  await vectorStore.addDocuments(documents);
-  return { success: true, count: documents.length };
+  return { success: true };
 }
