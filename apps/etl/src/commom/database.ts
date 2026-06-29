@@ -1,7 +1,6 @@
 import { PrismaClient, prismaConfig } from '@oda/database';
 import { normalizeString } from './normalize';
 const prisma = new PrismaClient(prismaConfig);
-
 export async function getOrCreateAreaConhecimentoHierarchy(tx: any, areaStr: string) {
     const parts = areaStr.split(/[>;]/).map(p => p.trim()).filter(p => p.length > 0);
     let currentParentId: string | null = null;

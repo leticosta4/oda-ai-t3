@@ -8,16 +8,12 @@ import { DefaultArgs } from '../../../shared/database/generated/prisma/runtime/c
 
 const prisma = new PrismaClient(prismaConfig);
 
-/**
- * Lógica de persistência para Currículos Lattes
- */
 
-async function getOpenAlexData(nome: string, orcid?:string) {
+export async function getOpenAlexData(orcid:string) {
     try{
-        const params = orcid ? `filter=orcid:${orcid}` : `search.exact=${nome}` 
-        const url = `${OPEN_ALEX_URL}?api_key=${process.env.OPEN_ALEX_KEY}&${params}`
+        const url = `${OPEN_ALEX_URL}?api_key=${process.env.OPEN_ALEX_KEY}&filter=orcid:${orcid}`
         const res = await fetch(url)
-        if (!res.ok || res.status == 404){ throw new Error(`Pesquisador(a) ${nome} não encontrado no openAlex`)}
+        if (!res.ok || res.status == 404){ throw new Error(`Orcid ${orcid} não encontrado no openAlex`)}
         const data = await res.json()
         if(data.meta.count == 0) return null
         const { id } = data.results[0]
@@ -25,12 +21,12 @@ async function getOpenAlexData(nome: string, orcid?:string) {
         return { h_index, i10_index, openAlexId: id}
     }catch(e: unknown){
         if(e instanceof Error){
-            console.log(`Ocorrou um erro ao procurar dados openAlex para ${nome} - ${e.message}`)
+            console.log(`Ocorrou um erro ao procurar dados openAlex para ${orcid} - ${e.message}`)
         }
     }
 }
 
-async function linkProductionDoi(doi: string) {
+export async function linkProductionDoi(doi: string) {
     try{
         const url = `${DOI_URL}${doi}`
         const res = await fetch(url)
@@ -40,7 +36,6 @@ async function linkProductionDoi(doi: string) {
         const abstract: string = data?.abstract ? stripHtml(data.abstract) : ""
         const publisher: string = data?.publisher || ""
         const licenseUrl: string = data?.license?.[0]?.URL || ""
-    console.log(data?.license?.[0]?.URL)
         return {abstract, publisher, licenseUrl} 
     }catch(e: unknown){
          if(e instanceof Error){
@@ -75,7 +70,6 @@ async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClie
                 }
             });
         }
-        console.log("Artigo enriquecido", artigo)
         if (!producao) {
             producao = await tx.producao.create({
                 data: {
@@ -99,7 +93,6 @@ async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClie
             });
         }
 
-        // Associa o autor na tabela pivot
         await tx.producaoPesquisador.upsert({
             where: {
                 producaoId_pesquisadorId: {
@@ -115,7 +108,6 @@ async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClie
         });
     }
 
-    // 2. Processa Livros e Capítulos
     for (const livro of livrosCapitulos) {
         if (!livro.titulo) continue;
 
@@ -160,7 +152,6 @@ async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClie
             });
         }
 
-        // Associa o autor na tabela pivot
         await tx.producaoPesquisador.upsert({
             where: {
                 producaoId_pesquisadorId: {
@@ -182,9 +173,12 @@ async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClie
  */
 export async function saveLattesToDb(data: any) {
     console.log(`[ETL] 📡 Buscando dados acadêmicos externos para ${data.nome}...`);
-
-    const openAlexData = await getOpenAlexData(data.nome, data.orcid || data.orcidId);
-
+    let openAlexData = null
+    if(data.orcidId != "" && data.orcidId != undefined)
+        console.log(data.orcidId)
+        data.orcidId = data.orcidId.split("/").pop()
+        openAlexData = await getOpenAlexData( data.orcidId);
+        console.log("OpenAlex Para", data.nome, openAlexData)
     const artigosEnriquecidos = [] as any;
     if (data.artigos && Array.isArray(data.artigos)) {
         for (const artigo of data.artigos) {
@@ -206,7 +200,6 @@ export async function saveLattesToDb(data: any) {
             });
         }
     }
-    console.log(artigosEnriquecidos)
     const livrosCapitulos = data.livrosCapitulos || [];
 
     try {
@@ -219,14 +212,15 @@ export async function saveLattesToDb(data: any) {
                 await tx.pesquisador.update({
                     where: { id: pesquisador.id },
                     data: {
+                        orcidId: data?.orcidId || null,
                         indexH: openAlexData?.h_index || null,
                         indexI10: openAlexData?.i10_index || null,
-                        openAlexId: openAlexData?.openAlexId || null,
+                        openAlexId: openAlexData?.openAlexId.split("/").pop() || null,
                         imageUrl: `/static/${data.lattes}.webp`
                     }
                 });
 
-                await saveResearcherProductions(tx, pesquisador.id, artigosEnriquecidos, livrosCapitulos);
+               await saveResearcherProductions(tx, pesquisador.id, artigosEnriquecidos, livrosCapitulos);
 
                 await tx.filaExtracaoPesquisador.upsert({
                     where: { lattesId: data.lattes },

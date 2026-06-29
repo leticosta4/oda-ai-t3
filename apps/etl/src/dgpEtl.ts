@@ -113,12 +113,10 @@ export async function saveGroupToDb(data: any) {
         if (data.membros && Array.isArray(data.membros)) {
             await prisma.$transaction(async (tx) => {
                 for (const membro of data.membros) {
-                    console.log("Adicionando membro", membro)
                     if (!membro.nome) continue;
                     const cleanLattes = membro.lattes ? membro.lattes.trim() : null;
                     if(!cleanLattes) continue;
         
-                    // Mapeamento seguro de TipoPesquisador
                     const rawTipo = membro.categoriaLattes?.trim().toUpperCase();
                     const tipoMap: Record<string, TipoPesquisador> = {
                         'PESQUISADOR': TipoPesquisador.PESQUISADOR,
@@ -131,7 +129,6 @@ export async function saveGroupToDb(data: any) {
                     };
                     const tipo = rawTipo ? (tipoMap[rawTipo] || null) : null;
 
-                    // Mapeamento seguro de FormacaoAcademica
                     const rawFormacao = membro.formacaoAcademica?.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, "");
                     const formacaoMap: Record<string, FormacaoAcademica> = {
                         'GRADUACAO': FormacaoAcademica.GRADUACAO,
@@ -261,7 +258,6 @@ export async function runGroupEtl(jsonPath: string) {
             if (!membro.lattes) continue;
             const lattesFileName = `${membro.lattes.trim()}.json`;
             const lattesFilePath = path.join(LATTES_DIR, lattesFileName);
-            console.log(lattesFilePath)
             if (fs.existsSync(lattesFilePath)) {
                 console.log(`[ETL] 👤 Iniciando ETL encadeado do pesquisador: ${membro.nome}`);
                 await runPesquisadorEtl(lattesFilePath);
@@ -269,7 +265,6 @@ export async function runGroupEtl(jsonPath: string) {
         }
     }
 
-    // Move o JSON do grupo para a pasta processed-data
     const groupFileName = path.basename(resolvedPath);
     const processedDgpDir = path.join(PROCESSED_DATA_DIR, 'dgp');
     if (!fs.existsSync(processedDgpDir)) fs.mkdirSync(processedDgpDir, { recursive: true });

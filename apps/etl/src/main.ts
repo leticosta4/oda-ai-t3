@@ -8,6 +8,7 @@ dotenv.config({
 import { DGP_DIR, LATTES_DIR, PROCESSED_DATA_DIR } from './commom/config';
 import { runGroupEtl, saveGroupToDb } from './dgpEtl';
 import { runPesquisadorEtl, saveLattesToDb } from './lattesEtl';
+import { runFixMetadata } from './fixMetadata';
 
 
 console.log('---------------------------------------------------------');
@@ -97,9 +98,14 @@ async function main() {
                 await runPesquisadorEtl(resolvedPath);
                 break;
             }
+            case 'fix':
+            case 'fix-metadata': {
+                await runFixMetadata(args.slice(1));
+                break;
+            }
             default:
                 console.error(`Erro: Comando desconhecido '${command}'`);
-                console.log("Comandos disponíveis: grupo, pesquisador");
+                console.log("Comandos disponíveis: grupo, pesquisador, fix");
                 process.exit(1);
         }
     } catch (error: any) {
