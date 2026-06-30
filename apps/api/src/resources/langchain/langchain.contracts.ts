@@ -6,6 +6,7 @@ export const LANGCHAIN_PATTERNS = {
   summarize: 'langchain.summarize',
 } as const;
 
+
 export interface LangchainGenerateRequest {
   prompt: string;
   system?: string;

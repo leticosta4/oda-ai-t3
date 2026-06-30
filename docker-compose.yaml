@@ -30,6 +30,8 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
+      - LANGCHAIN_HOST=langchain
+      - LANGCHAIN_PORT=8002
     ports:
       - "3000:3000"
     depends_on:
@@ -37,18 +39,17 @@ services:
       - redis
 
   langchain:
-    image: node:20-alpine
+    build:
+      context: .
+      dockerfile: apps/langchain-ts/Dockerfile
     container_name: oda_langchain_ts
-    working_dir: /app
-    volumes:
-      - .:/app
+    restart: always
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - OPEN_AI_KEY=${OPEN_AI_KEY}
       - LANGCHAIN_PORT=8002
     ports:
       - "8002:8002"
-    command: sh -c "pnpm install && pnpm -F @oda/langchain dev"
     depends_on:
       - postgres
 
