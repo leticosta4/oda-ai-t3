@@ -13,6 +13,7 @@ const embeddings = new OpenAIEmbeddings({
   modelName: "text-embedding-3-small",
 });
 
+// Chunker local robusto para evitar problemas de caminhos
 function splitText(text: string, chunkSize = 1000, chunkOverlap = 200): string[] {
   if (text.length <= chunkSize) return [text];
   const chunks: string[] = [];
@@ -45,19 +46,35 @@ function splitText(text: string, chunkSize = 1000, chunkOverlap = 200): string[]
   return chunks;
 }
 
+// Verifica se uma entidade precisa de vetorização (se é nova ou foi atualizada)
+async function needVectorization(sourceType: any, sourceId: string, dbUpdatedAt: Date): Promise<boolean> {
+  const existingDoc = await prisma.ragDocument.findUnique({
+    where: {
+      sourceType_sourceId: {
+        sourceType,
+        sourceId
+      }
+    },
+    select: {
+      atualizadoEm: true
+    }
+  });
+
+  if (!existingDoc) return true; // Novo registro
+
+  // Se foi atualizado no banco depois da última vetorização
+  return dbUpdatedAt.getTime() > existingDoc.atualizadoEm.getTime();
+}
+
+const textSplitter = { splitText };
+
 async function main() {
-  console.log('🔄 Iniciando vetorização utilizando as tabelas oficiais RagDocument e RagChunk com OVERLAP...');
+  console.log('🔄 Iniciando sincronização incremental de embeddings (apenas novos e atualizados)...');
 
-  try {
-    console.log('🗑️ Limpando tabelas de RAG anteriores...');
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "rag_chunk" CASCADE;');
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "rag_document" CASCADE;');
-    console.log('✅ Tabelas oficiais limpas.');
-  } catch (error) {
-    console.log('⚠️ Erro ao limpar tabelas (talvez vazias):', error);
-  }
-
-  console.log('📦 Buscando Grupos de Pesquisa...');
+  // ==========================================
+  // A. Sincronização de Grupos de Pesquisa
+  // ==========================================
+  console.log('📦 Analisando Grupos de Pesquisa...');
   const grupos = await prisma.grupoPesquisa.findMany({
     include: {
       instituicao: { include: { estado: true } },
@@ -67,8 +84,11 @@ async function main() {
     }
   });
 
-  console.log(`[ETL-IA] Formatando ${grupos.length} grupos de pesquisa...`);
+  let gruposSincronizados = 0;
   for (const g of grupos) {
+    const sync = await needVectorization('GRUPO_PESQUISA', g.id, g.atualizadoEm);
+    if (!sync) continue;
+
     let content = `Grupo de Pesquisa: ${g.nome}\n`;
     content += `DGP ID: ${g.dgpId || 'N/A'}\n`;
     content += `Instituição: ${g.instituicao?.nome || 'N/A'} (${g.instituicao?.sigla || ''}) - Estado: ${g.instituicao?.estado?.nome || 'N/A'}\n`;
@@ -96,9 +116,14 @@ async function main() {
     }
 
     await saveRagDocument('GRUPO_PESQUISA', g.id, g.nome, content, { dgpId: g.dgpId || '' });
+    gruposSincronizados++;
   }
+  console.log(`[ETL-IA] Grupos de Pesquisa processados: ${gruposSincronizados} sincronizados.`);
 
-  console.log('👥 Buscando Pesquisadores...');
+  // ==========================================
+  // B. Sincronização de Pesquisadores
+  // ==========================================
+  console.log('👥 Analisando Pesquisadores...');
   const pesquisadores = await prisma.pesquisador.findMany({
     include: {
       membrosGrupo: { include: { grupoPesquisa: { include: { instituicao: true } } } },
@@ -107,8 +132,11 @@ async function main() {
     }
   });
 
-  console.log(`[ETL-IA] Formatando ${pesquisadores.length} pesquisadores...`);
+  let pesquisadoresSincronizados = 0;
   for (const p of pesquisadores) {
+    const sync = await needVectorization('PESQUISADOR', p.id, p.atualizadoEm);
+    if (!sync) continue;
+
     let content = `Pesquisador: ${p.nome}\n`;
     content += `Lattes ID: ${p.lattesId || 'N/A'}\n`;
     content += `Tipo: ${p.tipo || 'N/A'}\n`;
@@ -134,15 +162,23 @@ async function main() {
     }
 
     await saveRagDocument('PESQUISADOR', p.id, p.nome, content, { lattesId: p.lattesId || '' });
+    pesquisadoresSincronizados++;
   }
+  console.log(`[ETL-IA] Pesquisadores processados: ${pesquisadoresSincronizados} sincronizados.`);
 
-  console.log('📚 Buscando Produções...');
+  // ==========================================
+  // C. Sincronização de Produções
+  // ==========================================
+  console.log('📚 Analisando Produções...');
   const producoes = await prisma.producao.findMany({
     include: { autores: { include: { pesquisador: true } } }
   });
 
-  console.log(`[ETL-IA] Formatando ${producoes.length} produções...`);
+  let producoesSincronizadas = 0;
   for (const pr of producoes) {
+    const sync = await needVectorization('PRODUCAO', pr.id, pr.atualizadoEm);
+    if (!sync) continue;
+
     let content = `Produção Acadêmica: ${pr.titulo}\n`;
     content += `Tipo: ${pr.tipo}\n`;
     content += `Ano: ${pr.ano || 'N/A'} | Veículo: ${pr.veiculo || 'N/A'}\n`;
@@ -158,9 +194,48 @@ async function main() {
     }
 
     await saveRagDocument('PRODUCAO', pr.id, pr.titulo, content, { doi: pr.doi || '' });
+    producoesSincronizadas++;
   }
+  console.log(`[ETL-IA] Produções processadas: ${producoesSincronizadas} sincronizadas.`);
 
-  console.log('🎉 Vetorização concluída com sucesso!');
+  // ==========================================
+  // D. Sincronização de Linhas de Pesquisa
+  // ==========================================
+  console.log('🔬 Analisando Linhas de Pesquisa...');
+  const linhas = await prisma.linhaPesquisa.findMany({
+    include: {
+      grupo: { include: { instituicao: true } },
+      palavrasChave: { include: { palavraChave: true } },
+      setoresAplicacao: { include: { setorAplicacao: true } }
+    }
+  });
+
+  let linhasSincronizadas = 0;
+  for (const lp of linhas) {
+    const sync = await needVectorization('LINHA_PESQUISA', lp.id, lp.atualizadoEm);
+    if (!sync) continue;
+
+    let content = `Linha de Pesquisa: ${lp.titulo}\n`;
+    content += `Objetivo: ${lp.objetivo || 'Sem objetivo cadastrado'}\n`;
+
+    const kw = lp.palavrasChave.map(pc => pc.palavraChave?.termo).filter(Boolean);
+    if (kw.length > 0) {
+      content += `Palavras-chave: ${kw.join(', ')}\n`;
+    }
+
+    const sectors = lp.setoresAplicacao.map(sa => sa.setorAplicacao?.nome).filter(Boolean);
+    if (sectors.length > 0) {
+      content += `Setores de Atividade/Aplicação: ${sectors.join(', ')}\n`;
+    }
+
+    content += `Grupo de Pesquisa Associado: ${lp.grupo?.nome || 'N/A'} (${lp.grupo?.instituicao?.sigla || ''})\n`;
+
+    await saveRagDocument('LINHA_PESQUISA', lp.id, lp.titulo, content, { grupoId: lp.grupoId });
+    linhasSincronizadas++;
+  }
+  console.log(`[ETL-IA] Linhas de Pesquisa processadas: ${linhasSincronizadas} sincronizadas.`);
+
+  console.log('🎉 Sincronização incremental concluída com sucesso!');
   process.exit(0);
 }
 
@@ -191,8 +266,7 @@ async function saveRagDocument(sourceType: any, sourceId: string, titulo: string
       where: { documentId: doc.id }
     });
 
-    const chunks = splitText(content);
-
+    const chunks = textSplitter.splitText(content);
     const vectors = await embeddings.embedDocuments(chunks);
 
     for (let i = 0; i < chunks.length; i++) {

@@ -28,6 +28,15 @@ export class LinhaPesquisaController {
     return this.linhaPesquisaService.findAll(query);
   }
 
+  @Get('busca-semantica')
+  buscaSemantica(
+    @Query('q') query: string, 
+    @Query('page') page?: number, 
+    @Query('size') size?: number
+  ) {
+    return this.linhaPesquisaService.buscaSemantica(query, page, size);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.linhaPesquisaService.findOne(id);

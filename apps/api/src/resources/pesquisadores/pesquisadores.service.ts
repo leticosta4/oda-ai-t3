@@ -5,12 +5,14 @@ import { CreatePesquisadoreDto } from './dto/create-pesquisadore.dto';
 import { UpdatePesquisadoreDto } from './dto/update-pesquisadore.dto';
 import { FindAllPesquisadoresDto } from './dto/find-all-pesquisadores.dto';
 import { Prisma } from '@oda/database';
+import { LangchainGatewayService } from '../langchain/langchain.service';
 const PESQUISADORES_LIST_CACHE_KEY = 'pesquisadores:list';
 
 @Injectable()
 export class PesquisadoresService {
   constructor(
     private readonly prismaService: PrismaService,
+    private readonly langchainService: LangchainGatewayService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) { }
@@ -70,6 +72,31 @@ export class PesquisadoresService {
 
       return { data, meta: { page, size, totalItems, totalPages } };
     });
+  }
+
+  async buscaSemantica(query: string, page?: number, size?: number) {
+    const pageNum = page ? Number(page) : 1;
+    const sizeNum = size ? Number(size) : 30;
+    const offset = (pageNum - 1) * sizeNum;
+
+    const { results, totalItems } = await this.langchainService.semanticSearch(query, 'PESQUISADOR', sizeNum, offset);
+    const ids = results.map(r => r.sourceId);
+
+    if (ids.length === 0) {
+      return { data: [], meta: { page: pageNum, size: sizeNum, totalItems: 0, totalPages: 0 } };
+    }
+
+    const pesquisadores = await this.prismaService.pesquisador.findMany({
+      where: { id: { in: ids } },
+      include: {
+        areasConhecimento: { include: { area: true } }
+      }
+    });
+
+    const data = ids.map(id => pesquisadores.find(p => p.id === id)).filter(Boolean);
+    const totalPages = Math.ceil(totalItems / sizeNum);
+
+    return { data, meta: { page: pageNum, size: sizeNum, totalItems, totalPages } };
   }
 
   findOne(id: string) {

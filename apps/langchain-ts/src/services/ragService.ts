@@ -130,3 +130,79 @@ export async function ingestResearchGroup(data: any) {
 
   return { success: true };
 }
+
+export async function summarizeText(text: string, instructions?: string) {
+  const prompt = PromptTemplate.fromTemplate(`
+    Você é um assistente especializado em resumir textos acadêmicos e técnicos de forma clara.
+    Instruções adicionais: {instructions}
+
+    Texto a ser resumido:
+    {text}
+
+    Resumo (em português):`);
+
+  const chain = RunnableSequence.from([
+    prompt,
+    model,
+    new StringOutputParser(),
+  ]);
+
+  return await chain.invoke({
+    text,
+    instructions: instructions || "Faça um resumo conciso destacando as principais contribuições.",
+  });
+}
+
+export async function performSemanticSearch(query: string, type?: string, limit = 10, offset = 0) {
+  // 1. Gera o embedding da busca
+  const [queryVector] = await embeddings.embedDocuments([query]);
+  const vectorStr = `[${queryVector.join(',')}]`;
+
+  // Mapeamento dos Enums do TypeScript para os valores reais gravados no PostgreSQL
+  const enumMapping: Record<string, string> = {
+    'GRUPO_PESQUISA': 'grupo_pesquisa',
+    'LINHA_PESQUISA': 'linha_pesquisa',
+    'PESQUISADOR': 'pesquisador',
+    'PRODUCAO': 'producao',
+    'AREA_CONHECIMENTO': 'area_conhecimento'
+  };
+
+  const dbType = type ? (enumMapping[type] || type.toLowerCase()) : undefined;
+
+  // 2. Busca os documentos correspondentes agrupando e buscando a melhor distância de cosseno por documento
+  let sql = `
+    SELECT rd.source_id as "sourceId", MIN(rc.embedding <-> $1::vector) as score
+    FROM rag_chunk rc
+    JOIN rag_document rd ON rc.document_id = rd.id
+  `;
+  const params: any[] = [vectorStr];
+
+  if (dbType) {
+    sql += ` WHERE rd.source_type = $2::rag_source_type`;
+    params.push(dbType);
+  }
+
+  sql += `
+    GROUP BY rd.source_id
+    ORDER BY score ASC
+    LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+  `;
+  params.push(limit);
+  params.push(offset);
+
+  // Contagem do total de itens desse tipo indexados
+  let countSql = `SELECT COUNT(DISTINCT source_id)::int as count FROM rag_document`;
+  const countParams: any[] = [];
+  if (dbType) {
+    countSql += ` WHERE source_type = $1::rag_source_type`;
+    countParams.push(dbType);
+  }
+
+  const [results, countRes] = await Promise.all([
+    prisma.$queryRawUnsafe<any[]>(sql, ...params),
+    prisma.$queryRawUnsafe<any[]>(countSql, ...countParams)
+  ]);
+
+  const totalItems = countRes[0]?.count || 0;
+  return { results, totalItems };
+}

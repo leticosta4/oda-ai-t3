@@ -5,12 +5,14 @@ import { CreateGruposPesquisaDto } from './dto/create-grupos-pesquisa.dto';
 import { UpdateGruposPesquisaDto } from './dto/update-grupos-pesquisa.dto';
 import { FindAllGruposPesquisaDto } from './dto/find-all-grupos-pesquisa.dto';
 import { Prisma } from '@oda/database';
+import { LangchainGatewayService } from '../langchain/langchain.service';
 const GRUPOS_PESQUISA_LIST_CACHE_KEY = 'grupos-pesquisa:list';
 
 @Injectable()
 export class GruposPesquisaService {
   constructor(
     private readonly prismaService: PrismaService,
+    private readonly langchainService: LangchainGatewayService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) { }
@@ -75,6 +77,32 @@ export class GruposPesquisaService {
 
       return { data, meta: { page, size, totalItems, totalPages } };
     });
+  }
+
+  async buscaSemantica(query: string, page?: number, size?: number) {
+    const pageNum = page ? Number(page) : 1;
+    const sizeNum = size ? Number(size) : 30;
+    const offset = (pageNum - 1) * sizeNum;
+
+    const { results, totalItems } = await this.langchainService.semanticSearch(query, 'GRUPO_PESQUISA', sizeNum, offset);
+    const ids = results.map(r => r.sourceId);
+
+    if (ids.length === 0) {
+      return { data: [], meta: { page: pageNum, size: sizeNum, totalItems: 0, totalPages: 0 } };
+    }
+
+    const grupos = await this.prismaService.grupoPesquisa.findMany({
+      where: { id: { in: ids } },
+      include: {
+        instituicao: { include: { estado: true } },
+        areasConhecimento: { include: { area: true } }
+      }
+    });
+
+    const data = ids.map(id => grupos.find(g => g.id === id)).filter(Boolean);
+    const totalPages = Math.ceil(totalItems / sizeNum);
+
+    return { data, meta: { page: pageNum, size: sizeNum, totalItems, totalPages } };
   }
 
   async findOne(id: string) {

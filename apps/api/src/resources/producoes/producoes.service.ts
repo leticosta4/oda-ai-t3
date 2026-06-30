@@ -5,6 +5,7 @@ import { CreateProducoeDto } from './dto/create-producoe.dto';
 import { UpdateProducoeDto } from './dto/update-producoe.dto';
 import { FindAllProducoesDto } from './dto/find-all-producoes.dto';
 import { Prisma } from '@oda/database';
+import { LangchainGatewayService } from '../langchain/langchain.service';
 
 const PRODUCOES_LIST_CACHE_KEY = 'producoes:list';
 
@@ -12,6 +13,7 @@ const PRODUCOES_LIST_CACHE_KEY = 'producoes:list';
 export class ProducoesService {
   constructor(
     private readonly prismaService: PrismaService,
+    private readonly langchainService: LangchainGatewayService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
@@ -104,6 +106,31 @@ export class ProducoesService {
 
       return { data, meta: { page, size, totalItems, totalPages } };
     });
+  }
+
+  async buscaSemantica(query: string, page?: number, size?: number) {
+    const pageNum = page ? Number(page) : 1;
+    const sizeNum = size ? Number(size) : 30;
+    const offset = (pageNum - 1) * sizeNum;
+
+    const { results, totalItems } = await this.langchainService.semanticSearch(query, 'PRODUCAO', sizeNum, offset);
+    const ids = results.map(r => r.sourceId);
+
+    if (ids.length === 0) {
+      return { data: [], meta: { page: pageNum, size: sizeNum, totalItems: 0, totalPages: 0 } };
+    }
+
+    const artigos = await this.prismaService.producao.findMany({
+      where: { id: { in: ids } },
+      include: {
+        autores: { include: { pesquisador: true } }
+      }
+    });
+
+    const data = ids.map(id => artigos.find(a => a.id === id)).filter(Boolean);
+    const totalPages = Math.ceil(totalItems / sizeNum);
+
+    return { data, meta: { page: pageNum, size: sizeNum, totalItems, totalPages } };
   }
 
   async findOne(id: string) {

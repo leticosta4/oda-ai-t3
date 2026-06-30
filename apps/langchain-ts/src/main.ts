@@ -16,6 +16,8 @@ app.get("/health", (req, res) => {
 });
 
 app.post("/question", ragController.ask);
+app.post("/summarize", ragController.summarize);
+app.post("/semantic-search", ragController.semanticSearch);
 app.post("/ingest", ragController.ingest);
 
 app.listen(port, () => {

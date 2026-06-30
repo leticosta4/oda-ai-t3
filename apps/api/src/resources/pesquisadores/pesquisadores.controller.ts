@@ -28,6 +28,15 @@ export class PesquisadoresController {
     return this.pesquisadoresService.findAll(query);
   }
 
+  @Get('busca-semantica')
+  buscaSemantica(
+    @Query('q') query: string, 
+    @Query('page') page?: number, 
+    @Query('size') size?: number
+  ) {
+    return this.pesquisadoresService.buscaSemantica(query, page, size);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.pesquisadoresService.findOne(id);
