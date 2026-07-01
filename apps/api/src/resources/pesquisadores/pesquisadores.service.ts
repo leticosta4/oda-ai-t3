@@ -37,9 +37,15 @@ export class PesquisadoresService {
       if (query.tipo) {
         where.tipo = query.tipo;
       }
+      if (query.grupoPesquisaId) {
+        where.membrosGrupo = {
+          some: {
+            grupoId: query.grupoPesquisaId,
+          },
+        };
+      }
     }
 
-    // Bypass cache if filters or pagination are present (except default pagination)
     if (Object.keys(where).length > 0 || (query && (query.page! > 1 || query.size !== 30))) {
       const [data, totalItems] = await Promise.all([
         this.prismaService.pesquisador.findMany({

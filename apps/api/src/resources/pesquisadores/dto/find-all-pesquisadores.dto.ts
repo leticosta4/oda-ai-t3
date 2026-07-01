@@ -14,4 +14,7 @@ export class FindAllPesquisadoresDto extends PaginationDto {
   @IsOptional()
   @IsEnum(TipoPesquisador)
   tipo?: TipoPesquisador;
+
+  @IsOptional()
+  grupoPesquisaId?: string;
 }
