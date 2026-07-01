@@ -230,6 +230,20 @@ enum TipoProducao {
   @@map("tipo_producao")
 }
 
+enum Qualis {
+  A1
+  A2
+  A3
+  A4
+  B1
+  B2
+  B3
+  B4
+  C
+
+  @@map("qualis_estrato")
+}
+
 model Producao {
   id            String                 @id @default(uuid())
   titulo        String
@@ -238,6 +252,8 @@ model Producao {
   doi           String?                @unique
   url           String?
   veiculo       String?
+  issn          String?
+  qualis        Qualis?
   resumo        String?
   autores       ProducaoPesquisador[]
   palavrasChave ProducaoPalavraChave[]
