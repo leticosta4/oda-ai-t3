@@ -1,6 +1,11 @@
 import { prismaConfig, PrismaClient } from '@oda/database';
-import { getOpenAlexData, linkProductionDoi } from './lattesEtl';
+import { getOpenAlexData, linkProductionDoi, linkProductionQualis } from './lattesEtl';
 import { stripHtml } from './commom/normalize';
+import { PROCESSED_DATA_DIR } from './commom/config';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Qualis } from '@oda/database';
+
 const prisma = new PrismaClient(prismaConfig);
 
 export async function runFixMetadata(args: string[]) {
@@ -8,6 +13,7 @@ export async function runFixMetadata(args: string[]) {
     let specificDoi: string | null = null;
     let fixAllLattes = false;
     let specificLattes: string | null = null;
+    let fixQualis = false;
 
     for (let i = 0; i < args.length; i++) {
         const flag = args[i];
@@ -21,12 +27,14 @@ export async function runFixMetadata(args: string[]) {
         } else if (flag === '-LATTES') {
             specificLattes = args[i + 1];
             i++; 
+        } else if (flag === '-qualis') {
+            fixQualis = true;
         }
     }
 
-    if (!fixAllDoi && !specificDoi && !fixAllLattes && !specificLattes) {
+    if (!fixAllDoi && !specificDoi && !fixAllLattes && !specificLattes && !fixQualis) {
         console.log('[FIX] Nenhuma flag informada.');
-        console.log('Uso: pnpm etl fix [-doi] [-DOI <id/doi>] [-lattes] [-LATTES <lattesId/id>]');
+        console.log('Uso: pnpm etl fix [-doi] [-DOI <id/doi>] [-lattes] [-LATTES <lattesId/id>] [-qualis]');
         return;
     }
 
@@ -90,6 +98,10 @@ export async function runFixMetadata(args: string[]) {
         }
     }
 
+    if (fixQualis) {
+        await runFixQualis();
+    }
+
     console.log('[FIX] Todos os reprocessamentos concluídos.');
 }
 
@@ -107,7 +119,7 @@ async function fixSingleDoi(id: string, doi: string) {
                 url: licenseUrl || undefined
             }
         });
-        console.log(`[FIX] ✅ Produção com DOI "${doi}" atualizada.`);
+        console.log(`[FIX] ✅ Produção com DOI "${doi}" updated.`);
     } else {
         console.log(`[FIX] ❌ Falha ao buscar dados para o DOI: "${doi}".`);
     }
@@ -131,4 +143,58 @@ async function fixSingleLattes(id: string, nome: string, orcid: string) {
     } else {
         console.log(`[FIX] ❌ Dados do OpenAlex não encontrados para: "${nome}".`);
     }
+}
+
+async function runFixQualis() {
+    console.log('[QUALIS] 📡 Iniciando varredura nos JSONs do Lattes...');
+    const lattesFolder = path.join(PROCESSED_DATA_DIR, 'lattes');
+    if (!fs.existsSync(lattesFolder)) {
+        console.error(`[QUALIS] ❌ Pasta não encontrada: ${lattesFolder}`);
+        return;
+    }
+
+    const files = fs.readdirSync(lattesFolder).filter(f => f.endsWith('.json'));
+    console.log(`[QUALIS] Encontrados ${files.length} arquivos JSON.`);
+
+    let countUpdated = 0;
+
+    for (const file of files) {
+        try {
+            const raw = fs.readFileSync(path.join(lattesFolder, file), 'utf-8');
+            const data = JSON.parse(raw);
+            if (!data.artigos || !Array.isArray(data.artigos)) continue;
+
+            for (const artigo of data.artigos) {
+                const issn = artigo.issn || artigo.ISSN || null;
+                if (!issn) continue;
+
+                let producao = null;
+                if (artigo.doi) {
+                    producao = await prisma.producao.findUnique({
+                        where: { doi: artigo.doi.trim() }
+                    });
+                }
+                if (!producao && artigo.titulo) {
+                    producao = await prisma.producao.findFirst({
+                        where: { titulo: { equals: artigo.titulo.trim(), mode: 'insensitive' } }
+                    });
+                }
+
+                if (producao) {
+                    const qualis = await linkProductionQualis(issn);
+                    await prisma.producao.update({
+                        where: { id: producao.id },
+                        data: { 
+                            issn, 
+                            qualis: qualis || null 
+                        }
+                    });
+                    countUpdated++;
+                }
+            }
+        } catch (e: any) {
+            console.error(`[QUALIS] Erro ao processar arquivo ${file}: ${e.message}`);
+        }
+    }
+    console.log(`[QUALIS] ✅ Sincronização de Qualis concluída. ${countUpdated} artigos atualizados.`);
 }

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { prismaConfig, PrismaClient, Prisma } from '@oda/database';
 import { OPEN_ALEX_URL, DOI_URL, PROCESSED_DATA_DIR } from './commom/config';
-import { TipoProducao } from '@oda/database';
+import { TipoProducao, Qualis } from '@oda/database';
 import { stripHtml } from './commom/normalize';
 import { DefaultArgs } from '../../../shared/database/generated/prisma/runtime/client';
 
@@ -44,7 +44,38 @@ export async function linkProductionDoi(doi: string) {
     }
 }
 
-async function linkProductionQualis(issn: string) {}
+let qualisMap: Map<string, string> | null = null;
+
+function loadQualisMap() {
+    if (qualisMap) return qualisMap;
+    qualisMap = new Map<string, string>();
+    try {
+        let filePath = path.resolve(__dirname, 'commom/qualis-capes-2017-2020.json');
+        if (!fs.existsSync(filePath)) {
+            filePath = path.resolve(__dirname, '../src/commom/qualis-capes-2017-2020.json');
+        }
+        if (fs.existsSync(filePath)) {
+            const raw = fs.readFileSync(filePath, 'utf-8');
+            const data = JSON.parse(raw);
+            for (const item of data) {
+                if (item.issn && item.qualis) {
+                    const cleanIssn = item.issn.replace(/-/g, '').trim().toUpperCase();
+                    qualisMap.set(cleanIssn, item.qualis);
+                }
+            }
+        }
+    } catch (e: any) {
+        console.error(`[ETL-QUALIS] Erro ao carregar arquivo de Qualis: ${e.message}`);
+    }
+    return qualisMap;
+}
+
+export async function linkProductionQualis(issn: string): Promise<Qualis | null> {
+    if (!issn) return null;
+    const map = loadQualisMap();
+    const clean = issn.replace(/-/g, '').trim().toUpperCase();
+    return (map.get(clean) as Qualis) || null;
+}
 
 
 async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClientOptions, Prisma.LogLevel, DefaultArgs>, "$connect" | "$disconnect" | "$on" | "$use" | "$extends">, pesquisadorId: string, artigos: any[], livrosCapitulos: any[]) {
@@ -70,6 +101,9 @@ async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClie
                 }
             });
         }
+        const issn = artigo.issn || artigo.ISSN || null;
+        const qualis = issn ? await linkProductionQualis(issn) : null;
+
         if (!producao) {
             producao = await tx.producao.create({
                 data: {
@@ -79,6 +113,8 @@ async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClie
                     doi: cleanDoi || null,
                     url: artigo.url || null,
                     veiculo: artigo?.veiculo || null,
+                    issn: issn || null,
+                    qualis: qualis || null,
                     resumo: artigo?.resumo || null
                 }
             });
@@ -88,7 +124,9 @@ async function saveResearcherProductions(tx: Omit<PrismaClient<Prisma.PrismaClie
                 data: {
                     doi: cleanDoi || producao.doi,
                     veiculo: artigo.nomePeriodico || artigo.veiculo || producao.veiculo,
-                    resumo: artigo.resumo || producao.resumo
+                    resumo: artigo.resumo || producao.resumo,
+                    issn: issn || producao.issn,
+                    qualis: qualis || (producao.issn ? await linkProductionQualis(producao.issn) : null)
                 }
             });
         }
