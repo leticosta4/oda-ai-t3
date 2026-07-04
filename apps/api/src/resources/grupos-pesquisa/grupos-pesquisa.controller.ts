@@ -14,9 +14,17 @@ import { CreateGruposPesquisaDto } from './dto/create-grupos-pesquisa.dto';
 import { UpdateGruposPesquisaDto } from './dto/update-grupos-pesquisa.dto';
 import { FindAllGruposPesquisaDto } from './dto/find-all-grupos-pesquisa.dto';
 
+import { FindAllPesquisadoresDto } from '../pesquisadores/dto/find-all-pesquisadores.dto';
+import { PesquisadoresService } from '../pesquisadores/pesquisadores.service';
+
+import { FindPesquisadoresByGrupoQueryDto } from './dto/find-pesquisadores-by-grupo-query.dto';
+
 @Controller('grupos-pesquisa')
 export class GruposPesquisaController {
-  constructor(private readonly gruposPesquisaService: GruposPesquisaService) {}
+  constructor(
+    private readonly gruposPesquisaService: GruposPesquisaService,
+    private readonly pesquisadoresService: PesquisadoresService,
+  ) {}
 
   @Post()
   create(@Body() createGruposPesquisaDto: CreateGruposPesquisaDto) {
@@ -35,6 +43,16 @@ export class GruposPesquisaController {
     @Query('size') size?: number
   ) {
     return this.gruposPesquisaService.buscaSemantica(query, page, size);
+  }
+
+  @Get(':id/pesquisadores')
+  findPesquisadores(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: FindPesquisadoresByGrupoQueryDto
+  ) {
+    const serviceQuery = query as any as FindAllPesquisadoresDto;
+    serviceQuery.grupoPesquisaId = id;
+    return this.pesquisadoresService.findAll(serviceQuery);
   }
 
   @Get(':id')

@@ -13,10 +13,17 @@ import { PesquisadoresService } from './pesquisadores.service';
 import { CreatePesquisadoreDto } from './dto/create-pesquisadore.dto';
 import { UpdatePesquisadoreDto } from './dto/update-pesquisadore.dto';
 import { FindAllPesquisadoresDto } from './dto/find-all-pesquisadores.dto';
+import { ProducoesService } from '../producoes/producoes.service';
+import { FindAllProducoesDto } from '../producoes/dto/find-all-producoes.dto';
+
+import { FindProducoesByPesquisadorQueryDto } from './dto/find-producoes-by-pesquisador-query.dto';
 
 @Controller('pesquisadores')
 export class PesquisadoresController {
-  constructor(private readonly pesquisadoresService: PesquisadoresService) {}
+  constructor(
+    private readonly pesquisadoresService: PesquisadoresService, 
+    private readonly producoesService:ProducoesService
+  ) {}
 
   @Post()
   create(@Body() createPesquisadoreDto: CreatePesquisadoreDto) {
@@ -42,6 +49,15 @@ export class PesquisadoresController {
     return this.pesquisadoresService.findOne(id);
   }
 
+  @Get(':id/producoes')
+  findProductions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: FindProducoesByPesquisadorQueryDto
+  ) {
+    const serviceQuery = query as any as FindAllProducoesDto;
+    serviceQuery.pesquisadorId = id;
+    return this.producoesService.findAll(serviceQuery);
+  }
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,

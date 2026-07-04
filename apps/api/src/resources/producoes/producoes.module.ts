@@ -7,5 +7,6 @@ import { LangchainGatewayModule } from '../langchain/langchain.module';
   imports: [LangchainGatewayModule],
   controllers: [ProducoesController],
   providers: [ProducoesService],
+  exports: [ProducoesService],
 })
 export class ProducoesModule {}

@@ -72,6 +72,25 @@ export class ProducoesService {
       if (query.tipo) {
         where.tipo = query.tipo;
       }
+
+      if (query.pesquisadorId || query.grupoId) {
+        where.autores = {
+          some: {
+            AND: [
+              query.pesquisadorId ? { pesquisadorId: query.pesquisadorId } : {},
+              query.grupoId ? {
+                pesquisador: {
+                  membrosGrupo: {
+                    some: {
+                      grupoId: query.grupoId
+                    }
+                  }
+                }
+              } : {}
+            ]
+          }
+        };
+      }
     }
 
     if (Object.keys(where).length > 0 || (query && (query.page > 1 || query.size !== 30))) {
