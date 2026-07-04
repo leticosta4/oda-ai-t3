@@ -12,6 +12,9 @@ import { ProducoesModule } from './resources/producoes/producoes.module';
 import { CacheModule } from './cache/cache.module';
 import { AreaConhecimentoModule } from './resources/area-conhecimento/area-conhecimento.module';
 import { UfModule } from './resources/uf/uf.module';
+import { AuthModule } from './resources/auth/auth.module';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -24,6 +27,7 @@ import { UfModule } from './resources/uf/uf.module';
       global: true,
     },
     CacheModule,
+    AuthModule,
     GruposPesquisaModule,
     InstituicaoModule,
     LangchainGatewayModule,
@@ -34,6 +38,12 @@ import { UfModule } from './resources/uf/uf.module';
     UfModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+  ],
 })
 export class AppModule {}
