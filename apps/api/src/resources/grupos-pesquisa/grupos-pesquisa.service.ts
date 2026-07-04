@@ -35,12 +35,12 @@ export class GruposPesquisaService {
       if (query.anoFormacao) {
         where.anoFormacao = query.anoFormacao;
       }
-      if (query.instituicao) {
-        where.instituicaoId = query.instituicao;
+      if (query.instituicaoId) {
+        where.instituicaoId = query.instituicaoId;
       }
-      if (query.estado) {
+      if (query.estadoId) {
         where.instituicao = {
-          estadoId: query.estado,
+          estadoId: query.estadoId,
         };
       }
     }
