@@ -1,6 +1,6 @@
 import os
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 # Load environments if not loaded
 from dotenv import load_dotenv
@@ -20,8 +20,13 @@ model = ChatOpenAI(
 ANSWER_PROMPT = PromptTemplate.from_template("""
   Você é um assistente especializado em grupos de pesquisa do CNPq/DGP.
   Use as seguintes partes do contexto recuperado para responder à pergunta.
-  Se você não sabe a resposta, apenas diga que não sabe, não tente inventar uma resposta.
-  Você não precisa responder com todos os possíveis detalhes uma pergunta específica, seja mais direto.
+  
+  REGRAS CRÍTICAS:
+  1. Responda à pergunta com base estritamente no Contexto fornecido.
+  2. Se o contexto fornecido for insuficiente para responder à pergunta de forma completa e segura, responda exatamente o seguinte: "Não encontrei informações suficientes sobre isso na base de dados de pesquisa."
+  3. Não utilize conhecimentos externos ao contexto para fundamentar as afirmações.
+  4. Seja direto e objetivo na sua resposta.
+
   Contexto:
   {context}
 

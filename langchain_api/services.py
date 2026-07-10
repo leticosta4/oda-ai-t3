@@ -9,14 +9,36 @@ async def ask_question(question: str, chat_history: str = ""):
     query_vector = await embeddings.aembed_query(question)
     vector_str = f"[{','.join(map(str, query_vector))}]"
     
-    # Query nearest chunks
+    # Query nearest chunks joining document metadata
     matched_chunks = await db.query_raw(
-        'SELECT conteudo FROM rag_chunk ORDER BY embedding <-> $1::vector ASC LIMIT 5',
+        'SELECT rc.conteudo, rd.titulo, rd.source_type as "source_type", rd.source_id as "source_id" '
+        'FROM rag_chunk rc '
+        'JOIN rag_document rd ON rc.document_id = rd.id '
+        'ORDER BY rc.embedding <-> $1::vector ASC LIMIT 5',
         vector_str
     )
     
-    context = "\n\n".join(c["conteudo"] for c in matched_chunks if "conteudo" in c)
+    context = ""
+    sources = []
+    seen_sources = set()
     
+    for i, c in enumerate(matched_chunks):
+        content = c.get("conteudo", "")
+        context += f"[Fonte {i+1}]:\n{content}\n\n"
+        
+        src_id = c.get("source_id")
+        src_type = c.get("source_type")
+        src_title = c.get("titulo")
+        
+        source_key = (src_type, src_id)
+        if source_key not in seen_sources:
+            seen_sources.add(source_key)
+            sources.append({
+                "title": src_title,
+                "sourceType": src_type,
+                "sourceId": src_id
+            })
+            
     chain = (
         {
             "context": lambda x: context,
@@ -27,7 +49,16 @@ async def ask_question(question: str, chat_history: str = ""):
         | StringOutputParser()
     )
     
-    return await chain.ainvoke(question)
+    answer = await chain.ainvoke(question)
+    
+    # If model answers that it doesn't know, empty the sources to make it cleaner
+    if "Não encontrei informações suficientes" in answer:
+        sources = []
+        
+    return {
+        "answer": answer,
+        "sources": sources
+    }
 
 async def ingest_document(content: str, metadata: dict = {}):
     doc_id = str(uuid.uuid4())
@@ -62,7 +93,6 @@ async def ingest_research_group(data: dict):
     content += f"Ano de Formação: {data.get('ano_formacao') or ''}\n"
     content += f"Repercussão: {data.get('repercussao') or ''}\n"
     
-    # Check if doc exists to replicate upsert
     existing = await db.ragdocument.find_unique(
         where={
             "sourceType_sourceId": {
