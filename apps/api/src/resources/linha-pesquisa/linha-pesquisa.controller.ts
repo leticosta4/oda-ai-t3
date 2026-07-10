@@ -7,11 +7,13 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
+  Query,
 } from '@nestjs/common';
 import type { UUID } from "node:crypto";
 import { LinhaPesquisaService } from './linha-pesquisa.service';
 import { CreateLinhaPesquisaDto } from './dto/create-linha-pesquisa.dto';
 import { UpdateLinhaPesquisaDto } from './dto/update-linha-pesquisa.dto';
+import { FindAllLinhaPesquisaDto } from './dto/find-all-linha-pesquisa.dto';
 
 @Controller('linha-pesquisa')
 export class LinhaPesquisaController {
@@ -23,25 +25,34 @@ export class LinhaPesquisaController {
   }
 
   @Get()
-  findAll() {
-    return this.linhaPesquisaService.findAll();
+  findAll(@Query() query: FindAllLinhaPesquisaDto) {
+    return this.linhaPesquisaService.findAll(query);
+  }
+
+  @Get('busca-semantica')
+  buscaSemantica(
+    @Query('q') query: string, 
+    @Query('page') page?: number, 
+    @Query('size') size?: number
+  ) {
+    return this.linhaPesquisaService.buscaSemantica(query, page, size);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: UUID) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.linhaPesquisaService.findOne(id);
   }
 
   @Patch(':id')
   update(
-    @Param('id', ParseUUIDPipe) id: UUID,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateLinhaPesquisaDto: UpdateLinhaPesquisaDto,
   ) {
     return this.linhaPesquisaService.update(id, updateLinhaPesquisaDto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: UUID) {
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.linhaPesquisaService.remove(id);
   }
 }

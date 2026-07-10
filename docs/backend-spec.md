@@ -51,20 +51,27 @@ Acionamento inicial:
 
 ### 3.1.1 ETL e Orquestração
 
-O ETL será planejado como responsabilidade separada do scraper. Tecnologias candidatas:
+O ETL será planejado como responsabilidade separada do scraper. A ferramenta escolhida é o **Apache Hop**.
 
-- Apache Hop.
-- Apache Airflow.
-- Airbyte.
+Responsabilidades atuais do ETL (Apache Hop):
+- `load_cnpq_xmls`: Lê e mapeia os arquivos XML gerados pelo scraper.
+- `clean_research_group_data`: Padroniza nomes (caixa alta) e limpa IDs para garantir consistência antes da inserção no banco relacional.
+- `clean_researchers_data`: Pipeline dedicado para padronizar e limpar dados dos pesquisadores (ex: limpar máscaras de Lattes ID e padronização nominal).
+- `enrich_researcher_data` (Pipeline de Enriquecimento Futuro): Preparado para realizar chamadas REST a APIs externas (OpenAlex, ORCID, DOI) a partir do Lattes ID para complementar os dados de pesquisadores e produções.
+- `main_workflow`: Workflow orquestrador que conecta sequencialmente todos os pipelines acima.
 
-Responsabilidades esperadas do ETL:
-
+Responsabilidades esperadas:
 - Limpeza de dados coletados.
 - Padronização de campos.
 - Normalização de entidades.
 - Controle de duplicidade.
 - Registro de qualidade dos dados.
 - Carga no banco transacional e/ou nas tabelas de indexação semântica.
+
+#### Gerenciamento de Variáveis no Apache Hop
+Para conciliar o desenvolvimento local (Hop Desktop) com a execução em produção (Docker), o projeto adota uma estratégia híbrida:
+- **Variáveis de Ambiente (Segredos):** Senhas de banco de dados e tokens de API devem ser injetados localmente via "Edit Environment Variables" no Hop Desktop ou através do `.env` do Docker Compose. **Nunca versionados.**
+- **Hop Environments (Configurações):** O arquivo `config/dev-env.json` é utilizado para versionar URLs base (ex: OpenAlex) e padrões estruturais não-sensíveis (`DB_HOST` como `localhost` para dev).
 
 ### 3.2 API REST e Microservices
 
@@ -136,15 +143,14 @@ Ponto técnico em aberto:
 
 ## 5. Arquitetura
 
-Arquitetura inicial em discussão:
+Arquitetura atualizada (Monorepo Híbrido):
 
 ```mermaid
 flowchart LR
-  FE[Frontend] --> API[API REST]
+  FE[Frontend] --> API[NestJS API REST]
   API --> DB[(PostgreSQL)]
-  API --> LC[LangChain Service]
-  LC --> DB
-  LC --> LLM[LLM/Embedding Provider]
+  API --> LC[Typescript LangChain Service]
+  LC --> GEMINI[Google Gemini API]
   SCRAPER[Scraper Service] --> XML[(XML Output)]
   ETL[ETL/Orchestration] --> DB
   XML --> ETL
@@ -153,12 +159,46 @@ flowchart LR
 ```
 
 Observações:
+- **API REST (Node.js/NestJS):** Responsável pelo CRUD transacional, gerenciamento de usuários e orquestração de alto nível.
+- **LangChain Service (Typescript):** Microserviço especializado em busca semântica e RAG. Utiliza Google Gemini (LLM e Embeddings).
+- **Vetorização:** No estágio atual do MVP, utiliza vector store em memória (FAISS) alimentado por arquivos XML.
 
-- O scraper coleta dados em XML.
-- O ETL transforma, limpa e carrega dados no banco.
-- A API expõe os dados estruturados.
-- O LangChain consulta tabelas de RAG/embeddings e usa o LLM apenas quando necessário.
-- A geração de embeddings após carga/atualização dos dados será refinada.
+## 6.5 Estado Atual do Scraper Service (TypeScript)
+
+- **Linguagem:** TypeScript (Node.js/Crawlee/Playwright).
+- **Localização:** `apps/scraper`.
+- **Arquitetura & Fluxo:**
+  - `dgpDiscovery.ts`: Responsável pela varredura e enfileiramento das chaves de busca. Executa de forma concorrente em duas direções (`forward` e `backward`) para maximizar a velocidade.
+  - `dgpScraper.ts`: Consome os registros da fila (`filaExtracaoGrupo`) e extrai os espelhos dos grupos detalhadamente.
+  - `lattesScraper.ts`: Coleta dados de currículos e fotos de membros/líderes dos grupos.
+- **Mecanismos de Estabilidade, Concorrência & Otimização:**
+  - **Isolamento de Eventos de Abas (Page-Scoped Popups):** Todas as escutas de novas janelas utilizam `page.on('popup')` e `page.waitForEvent('popup')` em substituição ao escopo global do contexto do navegador (`context.on('page')`). Isso assegura isolamento total entre os workers sob alta concorrência.
+  - **Bloqueio de Recursos Context-Wide (Context-Level Routing):** O bloqueio de carregamento de imagens, mídias, fontes e folhas de estilo (CSS) é configurado no nível do contexto (`context.route`) e herdado por todas as páginas e popups de currículos Lattes. Isso otimiza o carregamento de novas abas de ~40 segundos para menos de 5 segundos (ganho de até 10x na velocidade de processamento de homônimos).
+  - **Prevenção de Timeouts Prematuros:** O timeout global do Crawlee é configurado por meio da variável de ambiente `CRAWLEE_REQUEST_HANDLER_TIMEOUT_SECS=1800` no arquivo `.env`, garantindo que requisições longas que processam amplas listas de homônimos não sejam abortadas precocemente.
+  - **Processamento de Listagem em Duas Fases:** Em cada página, itens normais (não-boundaries e sem duplicados na página) são processados primeiro, permitindo pular de forma imediata registros cacheados via memória RAM (`processedKeys`). Em seguida, são processados os boundaries (limites da página que podem transpassar com outra direção) e duplicados internos (que necessitam de abertura para verificar desvios de ID).
+  - **Persistência de Progresso Resiliente:** O progresso de cada buscador é rastreado por um mapa global em memória (`requestPageProgress`). Se o worker cair ou a página do navegador for desalocada, a retentativa do Crawlee reinicia diretamente na última página processada com sucesso, evitando recomeçar da página 1 e ser falsamente interrompida.
+  - **Otimização de Escrita no Banco:** Reduzida a concorrência e o tráfego com o banco de dados durante a descoberta para 1 única operação (`upsert`), eliminando loops de recontagem sequenciais. A recalculagem de grupos `similares` passa a ser executada em um único lote (`normalizeQueueData`) ao término da execução do scraper.
+  - **Paginação Nativa via JS & Estado de UI:** A navegação entre páginas de busca no Lattes Scraper foi refatorada para invocar nativamente a função global `submeterPaginacao(inicio, 10)` com o índice de registro calculado, e a página ativa atual é obtida por detecção no DOM (através da classe `.is-current` ou do elemento `<font color="#ff0000">`). Isso contorna as quebras e limitações de clique tradicionais do Playwright em páginas governamentais complexas.
+  - **Filtro Prévio de Nomes (Homônimos):** O scraper de Lattes foi aprimorado para efetuar uma comparação textual exata (normalizada, case-insensitive e sem acentos) entre o nome do candidato no link da listagem de resultados e o pesquisador procurado, *antes* de clicar. Isso evita a abertura demorada e dispendiosa de popups e currículos errôneos, poupando CPU/memória e aumentando a velocidade global do scraper em até 10x.
+
+### 5.1 Estrutura de Monorepo
+
+O projeto usa um monorepo pnpm workspace, com `package.json` na raiz e `package.json` por aplicação.
+
+Estrutura atual:
+
+- `package.json` na raiz de `oda`: declara `workspaces`, scripts agregados, dependências comuns do NestJS e ferramentas de desenvolvimento compartilhadas.
+- `apps/api/package.json`: mantém scripts e dependências específicas da API REST, como Prisma, cache, validação e PostgreSQL.
+- `apps/langchain/package.json`: mantém scripts e dependências específicas do serviço LangChain/RAG.
+- `package-lock.json` canônico fica na raiz de `oda`.
+
+Decisões:
+
+- As versões comuns de NestJS devem ser centralizadas na raiz para evitar desalinhamento entre aplicações.
+- Todos os pacotes `@nestjs/*` devem ser mantidos no `package.json` raiz.
+- Dependências específicas de cada aplicação permanecem no respectivo app.
+- A unificação de dependências por workspace não altera a separação lógica dos serviços: `api` e `langchain` continuam sendo aplicações executáveis separadamente.
+- Os scripts da raiz devem usar `pnpm --workspace` para executar comandos em cada app.
 
 ## 6. Modelagem de Dados
 
@@ -201,7 +241,7 @@ Pontos a definir:
 Tabelas/modelos atualmente presentes no schema Prisma:
 
 - `Instituicao`.
-- `Uf`.
+- `Estado`.
 - `GrupoPesquisa`.
 - `LinhaPesquisa`.
 - `Pesquisador`.
@@ -210,6 +250,8 @@ Tabelas/modelos atualmente presentes no schema Prisma:
 - `AreaConhecimento`.
 - `PalavraChave`.
 - `SetorAplicacao`.
+- `GrupoPesquisaAreaConhecimento`.
+- `PesquisadoresAreaConhecimento`.
 - `LinhaPesquisaPalavraChave`.
 - `LinhaPesquisaSetorAplicacao`.
 - `Producao`.
@@ -262,11 +304,13 @@ Correções e complementos aplicados:
 - `Pesquisador` recebeu `lattesId`.
 - `Pesquisador.name` foi corrigido para `Pesquisador.nome`.
 - `Pesquisador` recebeu `tipo`, com valores técnico, estudante, pesquisador e colaborador estrangeiro.
-- `Pesquisador` recebeu `formacaoAcademica`, com valores graduação, especialização, mestrado e doutorado.
+- `Pesquisador` recebeu `formacaoAcademica`, com valores graduação, especialização, mestrado, doutorado e outro.
+- Mapeamentos resilientes foram implementados no ETL (`dgpEtl.ts`) para tratar desvios de enums do banco (ex: mapeamento seguro de `"ESTRANGEIRO"` para `"COLABORADOR_ESTRANGEIRO"`, e de titulações/países atípicos como `"REPUBLICA PORTUGUESA"` para `"OUTRO"`).
 - `Pesquisador` não possui `email` no modelo atual.
-- `Uf` foi criada como tabela própria.
-- `Instituicao.uf` passou a ser uma relação opcional com `Uf`.
-- `GrupoPesquisa` passou a ter vínculo opcional com `AreaConhecimento`.
+- `Estado` foi criado como tabela própria e recebeu o campo `regiao`.
+- `Instituicao.estado` passou a ser uma relação opcional com `Estado`.
+- `GrupoPesquisa` e `Pesquisador` passaram a ter relacionamento N:N com `AreaConhecimento` por meio de tabelas de associação (`GrupoPesquisaAreaConhecimento` e `PesquisadoresAreaConhecimento`).
+- `AreaConhecimento` agora suporta relacionamentos hierárquicos entre pai e filho com `areaPaiId`.
 - `MembroGrupo` recebeu `dataEntrada` para registrar quando o pesquisador entrou no grupo.
 - `LinhaPesquisa` passou a possuir membros por meio de `MembroLinhaPesquisa`.
 - `LinhaPesquisa` passou a possuir setores de aplicação por meio de `SetorAplicacao` e `LinhaPesquisaSetorAplicacao`.
@@ -300,17 +344,43 @@ Endpoints scaffold existentes por recurso:
 
 Observações:
 
-- `findAll` de grupos, instituições, linhas e pesquisadores já consulta Prisma.
-- `create`, `findOne`, `update` e `remove` ainda são placeholders.
+- A API compila via `pnpm run api:build` no workspace monorepo.
+- `linha-pesquisa` possui CRUD real com transações para manter vínculos em `membro_linha_pesquisa`, `linha_pesquisa_palavra_chave` e `linha_pesquisa_setor_aplicacao`.
+- `producoes` possui CRUD real com transações para manter vínculos em `producao_pesquisador` e `producao_palavra_chave`.
+- `instituicao` e `pesquisadores` possuem CRUD real simples com Prisma.
+- `pesquisadores.remove` remove vínculos em `membro_grupo`, `membro_linha_pesquisa` e `producao_pesquisador` antes de excluir o pesquisador.
+- `grupos-pesquisa` possui `create` e `findAll` reais, mas `findOne`, `update` e `remove` ainda precisam ser finalizados.
+- `estado`, `area-conhecimento`, `setor-aplicacao` e `palavra-chave` existem como services/DTOs auxiliares internos, mas ainda não estão expostos como módulos/controllers REST no `AppModule`.
 - DTOs de criação foram preenchidos para os recursos existentes com `class-validator` e `class-transformer`.
 - DTOs de atualização usam `PartialType` de `@nestjs/mapped-types`.
 - A aplicação usa `ValidationPipe` global com `whitelist`, `forbidNonWhitelisted` e `transform`.
 - Os enums usados nos DTOs devem vir do Prisma Client gerado, não de enums locais duplicados.
 - Foi criado o alias TypeScript `@/*` apontando para `src/*` para reduzir imports longos.
-- As rotas scaffold existentes foram ajustadas para tratar `id` como UUID string, alinhadas ao schema.
-- O recurso `producoes` existe no código e possui modelo correspondente no Prisma, mas o service ainda está em scaffold.
+- As rotas scaffold existentes foram ajustadas para validar `id` com `ParseUUIDPipe`, alinhadas ao uso de UUID no schema.
+- Os services recebem IDs como `string`; a validação de formato UUID fica na borda HTTP, nos controllers.
+- Erros conhecidos do Prisma são tratados por um exception filter global em `src/filters/prisma.exception.filter.ts`.
+- O mapeamento inicial de erros Prisma para HTTP é:
+  - `P2025` para `404 Not Found`.
+  - `P2002` para `409 Conflict`.
+  - `P2003` para `422 Unprocessable Entity`.
+  - `P2014` para `422 Unprocessable Entity`.
+- Cache manual com `cacheManager.wrap` é usado principalmente em listagens (`findAll`) e invalidado em operações de escrita quando implementadas.
 - Ainda não há paginação, filtros, ordenação ou padronização de resposta.
-- Os testes Jest atualmente falham ao importar o Prisma Client gerado por incompatibilidade com `import.meta` em ambiente CommonJS de teste; o build da API passa.
+- Testes unitários reais existem para `linha-pesquisa.service` e `producoes.service`, com mocks de Prisma/cache.
+- Validação recente: `pnpm --workspace @oda/api run test -- resources/linha-pesquisa/linha-pesquisa.service.spec.ts resources/producoes/producoes.service.spec.ts --runInBand` passou com 2 suítes e 8 testes.
+- A suíte completa de testes ainda precisa ser revisada e ampliada.
+
+### 6.7 Normalização de Termos e Resolução de Conflitos
+
+Para garantir a consistência das buscas semânticas e relacionalidade de dados, o sistema adota uma normalização em formato de slug para os termos de classificação (como Palavras-Chave e Setores de Aplicação).
+
+- **Regras de Normalização:** A função utilitária centralizada `normalizeString` remove acentos/diacríticos, converte todos os caracteres para minúsculas, exclui pontuações e caracteres especiais, descarta stopwords em português (e.g. `de`, `do`, `da`, `e`) e em inglês (e.g. `of`, `the`, `and`), e substitui espaços por hífens (`-`).
+- **Arquitetura:** O utilitário está localizado no módulo modularizado [normalize.ts](file:///D:/Uneb/2026.1/TCC1/Projeto/oda/apps/etl/src/commom/normalize.ts) dentro do serviço de ETL.
+- **Estratégia de Resolução de Conflitos (Merge):** Como a normalização em formato de slug é restritiva, diferentes termos originais podem resultar no mesmo termo normalizado (por exemplo, "Ciência de Computação" e "Ciência da Computação" normalizam para "ciencia-computacao"). Devido à restrição de unicidade (`@unique`) no banco de dados, esses cenários são tratados mesclando os registros duplicados de forma atômica:
+  1. Identifica-se o registro primário existente.
+  2. Atualizam-se as tabelas de associação (relações pivot N:M como `LinhaPesquisaPalavraChave`, `ProducaoPalavraChave` e `LinhaPesquisaSetorAplicacao`) para apontar para o ID do registro primário.
+  3. Se a relação já existir para o primário, o vínculo duplicado é removido.
+  4. Deleta-se o registro duplicado obsoleto do banco relacional.
 
 ## 7. Diagramas
 
@@ -322,11 +392,12 @@ hide circle
 skinparam linetype ortho
 skinparam classAttributeIconSize 0
 
-entity "uf" as Uf {
+entity "estado" as Estado {
   * id : uuid
   --
   * sigla : string
   * nome : string
+  * regiao : string
   * criado_em : datetime
   * atualizado_em : datetime
 }
@@ -336,7 +407,7 @@ entity "instituicao" as Instituicao {
   --
   * nome : string
   * sigla : string
-  uf_id : uuid
+  estado_id : uuid
   * criado_em : datetime
   * atualizado_em : datetime
 }
@@ -345,8 +416,7 @@ entity "area_conhecimento" as AreaConhecimento {
   * id : uuid
   --
   * nome : string
-  codigo : string
-  nivel : int
+  * nome_normalizado : string
   area_pai_id : uuid
   * criado_em : datetime
   * atualizado_em : datetime
@@ -360,11 +430,24 @@ entity "grupo_pesquisa" as GrupoPesquisa {
   ano_formacao : int
   * area_predominante : string
   repercussao : text
-  area_conhecimento_id : uuid
   * situacao : situacao
   * instituicao_id : uuid
   * criado_em : datetime
   * atualizado_em : datetime
+}
+
+entity "grupo_pesquisa_area_conhecimento" as GrupoPesquisaAreaConhecimento {
+  * grupo_id : uuid
+  * area_conhecimento_id : uuid
+  --
+  * criado_em : datetime
+}
+
+entity "pesquisador_area_conhecimento" as PesquisadorAreaConhecimento {
+  * pesquisador_id : uuid
+  * area_conhecimento_id : uuid
+  --
+  * criado_em : datetime
 }
 
 entity "linha_pesquisa" as LinhaPesquisa {
@@ -388,11 +471,26 @@ entity "pesquisador" as Pesquisador {
   * atualizado_em : datetime
 }
 
-entity "membro_grupo" as MembroGrupo {
+entity "area_atuacao" as AreaAtuacao {
   * id : uuid
   --
+  * nome : string
+  * nome_normalizado : string
+  * criado_em : datetime
+  * atualizado_em : datetime
+}
+
+entity "pesquisador_area_atuacao" as PesquisadorAreaAtuacao {
+  * pesquisador_id : uuid
+  * area_atuacao_id : uuid
+  --
+  * criado_em : datetime
+}
+
+entity "membro_grupo" as MembroGrupo {
   * pesquisador_id : uuid
   * grupo_id : uuid
+  --
   data_entrada : datetime
   * criado_em : datetime
   * atualizado_em : datetime
@@ -507,28 +605,53 @@ entity "coleta_scraper" as ColetaScraper {
   * id : uuid
   --
   * data_inicio : datetime
-  * data_fim : datetime
+  data_fim : datetime
   * status : status_coleta
   * registros_processados : int
-  * origem : string
-  * log_erros : text
   * criado_em : datetime
   * atualizado_em : datetime
 }
 
-entity "log_coleta_grupo" as LogColetaGrupo {
+entity "log_coleta_grupo" as LogColetaItem {
   * id : uuid
   --
   * coleta_id : uuid
-  * grupo_id : uuid
-  * acao : acao_coleta
+  entidade : log_coleta_entidade
+  * entidade_id : string
+  * status : log_coleta_status
   * criado_em : datetime
   * atualizado_em : datetime
 }
 
-Uf ||--o{ Instituicao
+entity "fila_extracao_grupo" as FilaExtracaoGrupo {
+  * dgp_id : string
+  --
+  * nome : string
+  * area : string
+  * instituicao : string
+  * status : fila_extracao_status
+  * tentativas : int
+  * similares : int
+  * criado_em : datetime
+  * ultima_atualizacao : datetime
+}
+
+entity "fila_extracao_pesquisador" as FilaExtracaoPesquisador {
+  * lattes_id : string
+  --
+  * nome : string
+  * status : fila_extracao_status
+  * tentativas : int
+  * criado_em : datetime
+  * ultima_atualizacao : datetime
+}
+
+Estado ||--o{ Instituicao
 Instituicao ||--o{ GrupoPesquisa
-AreaConhecimento ||--o{ GrupoPesquisa
+GrupoPesquisa ||--o{ GrupoPesquisaAreaConhecimento
+AreaConhecimento ||--o{ GrupoPesquisaAreaConhecimento
+Pesquisador ||--o{ PesquisadorAreaConhecimento
+AreaConhecimento ||--o{ PesquisadorAreaConhecimento
 AreaConhecimento ||--o{ AreaConhecimento : subareas
 GrupoPesquisa ||--o{ LinhaPesquisa
 GrupoPesquisa ||--o{ MembroGrupo
@@ -544,8 +667,9 @@ Pesquisador ||--o{ ProducaoPesquisador
 Producao ||--o{ ProducaoPalavraChave
 PalavraChave ||--o{ ProducaoPalavraChave
 RagDocument ||--o{ RagChunk
-ColetaScraper ||--o{ LogColetaGrupo
-GrupoPesquisa ||--o{ LogColetaGrupo
+ColetaScraper ||--o{ LogColetaItem
+GrupoPesquisa ||--o| LogColetaItem
+Pesquisador ||--o| LogColetaItem
 @enduml
 ```
 
@@ -565,3 +689,154 @@ A avaliação inicial das respostas do LangChain será manual, verificando:
 - Se os grupos retornados são compatíveis com a pergunta.
 - Se a resposta está apoiada em dados efetivamente coletados.
 - Se a recuperação usa corretamente áreas e linhas de pesquisa.
+
+## 9. Diretrizes Futuras
+
+Para a evolução do MVP rumo a um sistema de produção escalável, foram definidas as seguintes diretrizes:
+
+### 9.1 Mensageria e Processamento Assíncrono (Redis)
+- **Desativação da API de IA:** O serviço LangChain deixará de ser uma API FastAPI síncrona e passará a operar como um **Worker (Consumidor)**.
+- **Fila de Vetorização:** O Scraper e o ETL atuarão como **Produtores**, enviando mensagens para filas no Redis (ex: `fila_embeddings`) contendo metadados e IDs dos documentos recém-processados.
+- **Vantagens:** Maior resiliência contra falhas em APIs externas (Gemini/OpenAlex), controle refinado de *Rate Limit* e desacoplamento total entre a coleta de dados e a geração de inteligência semântica.
+
+### 9.2 Persistência Vetorial
+- Migração do Vector Store em memória (FAISS) para o **PostgreSQL com extensão pgvector**.
+- Isso permitirá consultas híbridas (SQL + Vetor) e persistência de longo prazo dos embeddings sem necessidade de re-vetorização total em cada inicialização.
+
+
+# 10 Diagramas Arquiteturias
+
+
+## 10.1 Arquitetura Geral
+
+```
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#ffffff',
+    'edgeColor': '#4A5568',
+    'lineColor': '#4A5568',
+    'textColor': '#2D3748',
+    'fontSize': '14px'
+  }
+}}%%
+flowchart LR
+    %% Configuração de Estilos de Cores Pastéis
+    classDef extFill fill:#FFF3CD,stroke:#D39E00,stroke-width:1px;
+    classDef scraperFill fill:#E0F2FE,stroke:#0284C7,stroke-width:1px;
+    classDef etlFill fill:#DCFCE7,stroke:#16A34A,stroke-width:1px;
+    classDef dbFill fill:#F3F4F6,stroke:#4B5563,stroke-width:1px;
+    classDef apiFill fill:#F3E8FF,stroke:#7C3AED,stroke-width:1px;
+    classDef clientFill fill:#FCE7F3,stroke:#DB2777,stroke-width:1px;
+
+    %% Fontes Externas
+    subgraph EXT ["Mundo Externo & APIs"]
+        CNPq["CNPq DGP / Lattes (Web)"]:::extFill
+        OpenAlex["OpenAlex API"]:::extFill
+        DOI["DOI API"]:::extFill
+        GeminiAPI["Google Gemini API"]:::extFill
+    end
+
+    %% Monorepo Open DGP
+    subgraph MONO ["Monorepo: Open DGP"]
+        
+        subgraph INGEST ["Camada de Ingestão"]
+            Scraper["apps/scraper<br>(Crawlee / Playwright)"]:::scraperFill
+        end
+
+        subgraph PROC ["Camada de Processamento"]
+            ETL["apps/etl<br>(TypeScript Core)"]:::etlFill
+        end
+
+        subgraph STORAGE ["Camada de Armazenamento"]
+            Postgres[("PostgreSQL<br>(Transacional + Vetorial)")]:::dbFill
+            Redis[("Redis<br>(Cache de API)")]:::dbFill
+        end
+
+        subgraph INTEL ["Consumo & Inteligência"]
+            API["apps/api<br>(NestJS REST API)"]:::apiFill
+            LangChain["apps/langchain-ts<br>(Serviço RAG)"]:::apiFill
+        end
+        
+    end
+
+    %% Cliente
+    Client["Cliente / Frontend"]:::clientFill
+
+    %% Conexões e Fluxos
+    CNPq -->|Extração de dados| Scraper
+    Scraper -->|Gera arquivos brutos| ETL
+    
+    ETL -->|Enriquecimento| OpenAlex
+    ETL -->|Enriquecimento| DOI
+    ETL -->|Persistência via Prisma| Postgres
+
+    Client <-->|Requisições HTTP| API
+    API <-->|Cache de Rotas| Redis
+    API <-->|Orquestração RAG| LangChain
+    
+    LangChain <-->|Busca Vetorial & Contexto| Postgres
+    LangChain <-->|Geração de Embeddings & LLM| GeminiAPI
+```
+## 10.2 Fluxo de Coleta e ETL 
+```
+flowchart LR
+    STEP1["1. Scraper coleta dados\n(DGP/Lattes)"]
+    RAW["data/raw-data/\n(JSON + imagens)"]
+    STEP2["2. ETL lê arquivos"]
+    STEP3["3. Normalização\n(strings + slugs)"]
+    STEP4["4. Enriquecimento\n(OpenAlex + DOI APIs)"]
+    STEP5["5. Persistência\n(PostgreSQL via Prisma)"]
+    STEP6["6. Move para\nprocessed-data/"]
+
+    STEP1 --> RAW
+    RAW --> STEP2
+    STEP2 --> STEP3
+    STEP3 --> STEP4
+    STEP4 --> STEP5
+    STEP5 --> STEP6
+
+    %% Cores
+    style STEP1 fill:#cce5ff
+    style RAW fill:#cce5ff
+    style STEP2 fill:#d4edda
+    style STEP3 fill:#d4edda
+    style STEP4 fill:#d4edda
+    style STEP5 fill:#e2e3e5
+    style STEP6 fill:#d4edda
+  ```
+
+## 10.3 Fluxo de Busca Semântica
+```
+   flowchart LR
+    USER["Usuário\nPergunta"]
+    API["NestJS API\nHTTP"]
+    LANG["LangChain Service"]
+    EMB["Geração de Embeddings\n(Google Gemini)"]
+    VDB["Vector Database\n(PostgreSQL)"]
+    RETRIEVE["Recuperação de contexto\n(cosseno)"]
+    PROMPT["Construção do Prompt"]
+    LLM["Google Gemini\nResposta"]
+    RESPONSE["Resposta ao usuário"]
+
+    USER --> API
+    API --> LANG
+    LANG --> EMB
+    EMB --> LANG
+    LANG --> VDB
+    VDB --> RETRIEVE
+    RETRIEVE --> PROMPT
+    PROMPT --> LLM
+    LLM --> LANG
+    LANG --> API
+    API --> RESPONSE
+
+    %% Cores
+    style API fill:#e6ccff
+    style LANG fill:#e6ccff
+    style EMB fill:#e6ccff
+    style LLM fill:#e6ccff
+    style VDB fill:#e2e3e5
+    style USER fill:#cce5ff
+
+```

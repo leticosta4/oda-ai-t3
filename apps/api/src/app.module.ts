@@ -9,25 +9,41 @@ import { LangchainGatewayModule } from './resources/langchain/langchain.module';
 import { LinhaPesquisaModule } from './resources/linha-pesquisa/linha-pesquisa.module';
 import { PesquisadoresModule } from './resources/pesquisadores/pesquisadores.module';
 import { ProducoesModule } from './resources/producoes/producoes.module';
+import { CacheModule } from './cache/cache.module';
+import { AreaConhecimentoModule } from './resources/area-conhecimento/area-conhecimento.module';
+import { UfModule } from './resources/uf/uf.module';
+import { AuthModule } from './resources/auth/auth.module';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: '../../.env',
     }),
     {
       module: PrismaModule,
       global: true,
     },
+    CacheModule,
+    AuthModule,
     GruposPesquisaModule,
     InstituicaoModule,
     LangchainGatewayModule,
     LinhaPesquisaModule,
     PesquisadoresModule,
     ProducoesModule,
+    AreaConhecimentoModule,
+    UfModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  // providers: [
+  //   AppService,
+  //   {
+  //     provide: APP_GUARD,
+  //     useClass: JwtAuthGuard,
+  //   },
+  // ],
 })
 export class AppModule {}

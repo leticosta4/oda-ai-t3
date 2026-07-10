@@ -7,11 +7,13 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
+  Query,
 } from '@nestjs/common';
 import type { UUID } from "node:crypto";
 import { ProducoesService } from './producoes.service';
 import { CreateProducoeDto } from './dto/create-producoe.dto';
 import { UpdateProducoeDto } from './dto/update-producoe.dto';
+import { FindAllProducoesDto } from './dto/find-all-producoes.dto';
 
 @Controller('producoes')
 export class ProducoesController {
@@ -23,25 +25,34 @@ export class ProducoesController {
   }
 
   @Get()
-  findAll() {
-    return this.producoesService.findAll();
+  findAll(@Query() query: FindAllProducoesDto) {
+    return this.producoesService.findAll(query);
+  }
+
+  @Get('busca-semantica')
+  buscaSemantica(
+    @Query('q') query: string, 
+    @Query('page') page?: number, 
+    @Query('size') size?: number
+  ) {
+    return this.producoesService.buscaSemantica(query, page, size);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: UUID) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.producoesService.findOne(id);
   }
 
   @Patch(':id')
   update(
-    @Param('id', ParseUUIDPipe) id: UUID,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateProducoeDto: UpdateProducoeDto,
   ) {
     return this.producoesService.update(id, updateProducoeDto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: UUID) {
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.producoesService.remove(id);
   }
 }

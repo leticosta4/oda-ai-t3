@@ -25,4 +25,8 @@ export class CreatePesquisadoreDto {
   @IsOptional()
   @IsEnum(FormacaoAcademica)
   formacaoAcademica?: FormacaoAcademica;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 }
