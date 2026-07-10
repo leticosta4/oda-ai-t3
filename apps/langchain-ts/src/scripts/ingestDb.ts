@@ -1,19 +1,9 @@
-import { PrismaClient, prismaConfig } from '@oda/database';
-import { OpenAIEmbeddings } from "@langchain/openai";
 import { randomUUID } from 'crypto';
-import * as dotenv from 'dotenv';
-import path from 'path';
+import { embeddings } from '../core/config';
+import { prisma } from '../core/db';
 
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
-const prisma = new PrismaClient(prismaConfig);
 
-const embeddings = new OpenAIEmbeddings({
-  openAIApiKey: process.env.OPEN_AI_KEY,
-  modelName: "text-embedding-3-small",
-});
-
-// Chunker local robusto para evitar problemas de caminhos
 function splitText(text: string, chunkSize = 1000, chunkOverlap = 200): string[] {
   if (text.length <= chunkSize) return [text];
   const chunks: string[] = [];

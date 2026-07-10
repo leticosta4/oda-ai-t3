@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import * as dotenv from "dotenv";
 import * as ragController from "./controllers/ragController";
-
 dotenv.config({ path: "../../.env" });
 
 const app = express();

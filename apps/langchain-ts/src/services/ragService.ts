@@ -1,36 +1,10 @@
-import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
-import { PromptTemplate } from "@langchain/core/prompts";
+
 import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
 import { StringOutputParser } from "@langchain/core/output_parsers";
-import { PrismaClient, prismaConfig } from '@oda/database';
-import * as dotenv from "dotenv";
+import { ANSWER_PROMPT, embeddings, model, SUMMARIZE_PROMPT } from "../core/config";
+import { prisma } from "../core/db";
 
-dotenv.config({ path: "../../.env" });
 
-const prisma = new PrismaClient(prismaConfig);
-
-const embeddings = new OpenAIEmbeddings({
-  openAIApiKey: process.env.OPEN_AI_KEY,
-  modelName: "text-embedding-3-small",
-});
-
-const model = new ChatOpenAI({
-  openAIApiKey: process.env.OPEN_AI_KEY,
-  modelName: "gpt-4o-mini",
-  temperature: 0,
-});
-
-const ANSWER_PROMPT = PromptTemplate.fromTemplate(`
-  Você é um assistente especializado em grupos de pesquisa do CNPq/DGP.
-  Use as seguintes partes do contexto recuperado para responder à pergunta.
-  Se você não sabe a resposta, apenas diga que não sabe, não tente inventar uma resposta.
-
-  Contexto:
-  {context}
-
-  Pergunta: {question}
-
-  Resposta (em português):`);
 
 export async function askQuestion(question: string, chatHistory: string = "") {
   const [questionVector] = await embeddings.embedDocuments([question]);
@@ -132,17 +106,10 @@ export async function ingestResearchGroup(data: any) {
 }
 
 export async function summarizeText(text: string, instructions?: string) {
-  const prompt = PromptTemplate.fromTemplate(`
-    Você é um assistente especializado em resumir textos acadêmicos e técnicos de forma clara.
-    Instruções adicionais: {instructions}
-
-    Texto a ser resumido:
-    {text}
-
-    Resumo (em português):`);
+  
 
   const chain = RunnableSequence.from([
-    prompt,
+    SUMMARIZE_PROMPT,
     model,
     new StringOutputParser(),
   ]);
@@ -154,11 +121,9 @@ export async function summarizeText(text: string, instructions?: string) {
 }
 
 export async function performSemanticSearch(query: string, type?: string, limit = 10, offset = 0) {
-  // 1. Gera o embedding da busca
   const [queryVector] = await embeddings.embedDocuments([query]);
   const vectorStr = `[${queryVector.join(',')}]`;
 
-  // Mapeamento dos Enums do TypeScript para os valores reais gravados no PostgreSQL
   const enumMapping: Record<string, string> = {
     'GRUPO_PESQUISA': 'grupo_pesquisa',
     'LINHA_PESQUISA': 'linha_pesquisa',
@@ -169,7 +134,6 @@ export async function performSemanticSearch(query: string, type?: string, limit 
 
   const dbType = type ? (enumMapping[type] || type.toLowerCase()) : undefined;
 
-  // 2. Busca os documentos correspondentes agrupando e buscando a melhor distância de cosseno por documento
   let sql = `
     SELECT rd.source_id as "sourceId", MIN(rc.embedding <-> $1::vector) as score
     FROM rag_chunk rc
@@ -190,7 +154,6 @@ export async function performSemanticSearch(query: string, type?: string, limit 
   params.push(limit);
   params.push(offset);
 
-  // Contagem do total de itens desse tipo indexados
   let countSql = `SELECT COUNT(DISTINCT source_id)::int as count FROM rag_document`;
   const countParams: any[] = [];
   if (dbType) {

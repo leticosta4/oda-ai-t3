@@ -1,14 +1,17 @@
 {
   "compilerOptions": {
     "module": "nodenext",
-    "target": "es2021",
+    "moduleResolution": "nodenext",
+    "target": "ES2022",
     "sourceMap": true,
     "outDir": "./dist",
+    "rootDir": "./src",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
   },
-  "include": ["src/**/*"]
+
+  "include": ["./src/**/*"],
 }
