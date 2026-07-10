@@ -1,91 +1,108 @@
-# Open DGP - Monorepo (TypeScript)
+# Open DGP - Monólito (Python)
 
-Sistema completo e unificado em TypeScript para extração, processamento, estruturação, busca semântica (RAG) e análise de grupos de pesquisa do CNPq/DGP.
+Sistema completo e unificado em Python para extração, processamento, estruturação, busca semântica (RAG) e análise de grupos de pesquisa do CNPq/DGP.
 
 ---
 
 ## Tecnologias Principais
-* **Node.js** (v20+) & **PNPM Workspaces**
-* **NestJS** (API REST principal)
-* **LangChain.js** (Serviço de RAG & busca semântica com OpenAI)
-* **Crawlee & Playwright** (Web Scraping dos dados públicos)
-* **Prisma ORM & PostgreSQL** (Persistência relacional e vetorial pgvector)
-* **Redis** (Gerenciamento de cache da API)
+* **Python 3.12**
+* **FastAPI** (Serviço de RAG & busca semântica com LangChain)
+* **Playwright & BeautifulSoup4** (Web Scraping dos dados públicos de forma simplificada e sequencial)
+* **Prisma ORM (Python Client) & PostgreSQL** (Persistência relacional e vetorial pgvector)
 
 ---
 
 ## 🚀 Como Inicializar o Projeto
 
 ### 1. Instalação das Dependências
-Na pasta raiz `/oda`, execute o comando abaixo para instalar todas as dependências do monorepo de forma otimizada:
+Instale todas as dependências necessárias utilizando o `pip`:
 ```bash
-pnpm install
+pip install -r requirements.txt
 ```
 
 ### 2. Variáveis de Ambiente
-Crie um arquivo `.env` na raiz `/oda` com base no arquivo `.env.example`:
-```bash
-cp .env.example .env
-```
-Preencha as variáveis, principalmente a chave de API da OpenAI (`OPEN_AI_KEY`) e as credenciais do PostgreSQL/Redis.
+Crie ou configure o arquivo `.env` na raiz do projeto (use o `.env.example` como base). Garanta que as seguintes variáveis estejam configuradas:
+- `DATABASE_URL` (URL de conexão PostgreSQL)
+- `OPEN_AI_KEY` (Chave de API OpenAI para embeddings e RAG)
 
-### 3. Subir a Infraestrutura (Docker)
-Para subir o banco de dados e o cache Redis:
+### 3. Geração do Cliente Prisma
+Gere o cliente do banco de dados para Python executando:
 ```bash
-docker compose up -d postgres redis
+prisma generate
+```
+
+### 4. Subir a Infraestrutura (Docker)
+Para subir o banco de dados PostgreSQL com pgvector:
+```bash
+docker compose up -d postgres
 ```
 
 ---
 
-## Executando os Serviços do Monorepo
-###### *Todos os serviços são independentes e podem ser rodados separadamente*
-
-Toda a execução pode ser feita a partir da raiz `/oda` utilizando filtros do `pnpm`:
+## Executando os Serviços e Scripts
 
 ### A. Scraper (Coleta de Dados)
-Responsável por buscar os dados dos grupos e pesquisadores no CNPq/DGP utilizando Crawlee + Playwright:
-```bash
-pnpm run run:scraper
-```
+O scraper coleta dados públicos do DGP e do Currículo Lattes sequencialmente, sem cacheamento local e com uma única instância ativa de Playwright:
+* **Descoberta de Grupos (Parametrizada):**
+  ```bash
+  python -m scraper.main discovery
+  ```
+* **Extração de Dados dos Grupos na Fila:**
+  ```bash
+  python -m scraper.main dgp
+  ```
+* **Extração de Currículos Lattes na Fila:**
+  ```bash
+  python -m scraper.main lattes
+  ```
+* **Repopular Fila de Pesquisadores a partir dos JSONs Locais:**
+  ```bash
+  python -m scraper.main repopulate
+  ```
+* **Resetar Status da Fila (de PROCESSANDO para PENDENTE):**
+  ```bash
+  python -m scraper.main reset-queue
+  ```
 
-### B. ETL (Importação de Dados)
-Processa os JSONs gerados pelo scraper e salva no banco de dados estruturado do PostgreSQL:
-* **Importar Grupos de Pesquisa:**
+### B. ETL (Importação e Processamento de Dados)
+Processa os JSONs brutos da pasta `data/raw-data` e popula a estrutura relacional do banco:
+* **Watcher Automatizado (Processa novos arquivos em tempo real):**
   ```bash
-  pnpm --filter @oda/etl etl:grupo
+  python -m etl.main
   ```
-* **Importar Pesquisadores e Produções:**
+* **Processar Grupo Específico:**
   ```bash
-  pnpm --filter @oda/etl etl:pesquisador
+  python -m etl.main grupo <id_dgp_ou_caminho_json>
   ```
-* **Vincular ISSN / Qualis retroativamente (Mapeamento de Metadados):**
+* **Processar Pesquisador Específico:**
   ```bash
-  pnpm --filter @oda/etl start fix -qualis
+  python -m etl.main pesquisador <id_lattes_ou_caminho_json>
+  ```
+* **Processar Todos os Grupos e Pesquisadores Salvos:**
+  ```bash
+  python -m etl.main run-all
+  ```
+* **Reprocessar/Corrigir Metadados (CrossRef/OpenAlex/Qualis):**
+  ```bash
+  python -m etl.main fix [-doi] [-DOI <doi>] [-lattes] [-LATTES <lattes_id>] [-qualis]
   ```
 
-### C. API REST (Servidor Principal)
-Fornece os endpoints de dados e integrações para o frontend:
-```bash
-pnpm run dev:api
-```
-A API rodará por padrão na porta `3000`.
-
-### D. LangChain Service (Busca Semântica & RAG)
-Gerencia a indexação vetorial e responde perguntas baseando-se nas produções acadêmicas:
-* **Vetorizar e Sincronizar o Banco (Ingestão):**
+### C. LangChain API (Busca Semântica & RAG com FastAPI)
+Serviço REST em FastAPI para perguntas semânticas, resumos e indexação vetorial:
+* **Vetorizar e Sincronizar o Banco (Indexação Incremental):**
   ```bash
-  pnpm run ingest:db
+  python -m langchain_api.ingest_db
   ```
-* **Iniciar o serviço de RAG em desenvolvimento:**
+* **Iniciar o Servidor de Desenvolvimento:**
   ```bash
-  pnpm run dev:langchain
+  python -m langchain_api.main
   ```
-  O microserviço rodará na porta `8002`.
+  O serviço FastAPI estará rodando na porta `8002`.
 
 ---
 
 ## 🐳 Executando com Docker Compose (Modo Produção)
-Se desejar rodar todos os serviços da aplicação conteinerizados de uma única vez:
+Se desejar rodar o banco de dados e o serviço FastAPI do LangChain unificados:
 ```bash
 docker compose up --build -d
 ```
