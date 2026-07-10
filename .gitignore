@@ -14,3 +14,18 @@ audit/
 metadata/hop-config.json
 *.hpl.cache
 *.hwf.cache
+
+
+# New python gitignore
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.vscode/
+.idea/
+*.egg-info/
+dist/
+build/
