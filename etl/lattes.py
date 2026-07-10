@@ -1,10 +1,32 @@
 import os
 import json
+import httpx
 from db.client import db
 from etl.common import (
     PROCESSED_DATA_DIR, LATTES_DIR,
-    link_production_qualis
+    link_production_qualis, DOI_URL, strip_html
 )
+
+async def link_production_doi(doi: str):
+    try:
+        url = f"{DOI_URL}{doi}"
+        async with httpx.AsyncClient() as client:
+            res = await client.get(url, timeout=10.0)
+            if res.status_code != 200:
+                return None
+            data = res.json()
+            abstract = strip_html(data.get("abstract", ""))
+            publisher = data.get("publisher", "")
+            license_list = data.get("license", [])
+            license_url = license_list[0].get("URL", "") if license_list else ""
+            return {
+                "abstract": abstract,
+                "publisher": publisher,
+                "licenseUrl": license_url
+            }
+    except Exception as e:
+        print(f"Ocorreu um erro ao buscar informações para o doi {doi} - {str(e)}")
+    return None
 
 async def save_researcher_productions(tx, pesquisador_id: str, artigos: list, livros_capitulos: list):
     # Articles
@@ -148,6 +170,27 @@ async def save_lattes_to_db(data: dict):
         data["orcidId"] = orcid_id
         
     artigos = data.get("artigos", [])
+    artigos_enriquecidos = []
+    
+    for artigo in artigos:
+        doi = artigo.get("doi")
+        resumo = None
+        veiculo = None
+        url = None
+        if doi:
+            artigos_extra = await link_production_doi(doi)
+            if artigos_extra:
+                resumo = strip_html(artigos_extra["abstract"]) if artigos_extra.get("abstract") else None
+                veiculo = artigos_extra.get("publisher")
+                url = artigos_extra.get("licenseUrl")
+                
+        artigos_enriquecidos.append({
+            **artigo,
+            "resumo": resumo or artigo.get("resumo"),
+            "veiculo": veiculo or artigo.get("veiculo") or artigo.get("nomePeriodico"),
+            "url": url or artigo.get("url")
+        })
+        
     livros_capitulos = data.get("livrosCapitulos", [])
     
     try:
@@ -166,7 +209,7 @@ async def save_lattes_to_db(data: dict):
                     }
                 )
                 
-                await save_researcher_productions(tx, pesquisador.id, artigos, livros_capitulos)
+                await save_researcher_productions(tx, pesquisador.id, artigos_enriquecidos, livros_capitulos)
                 
                 # Update queue status
                 await tx.filaextracaopesquisador.upsert(

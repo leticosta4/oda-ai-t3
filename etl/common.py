@@ -9,6 +9,7 @@ RAW_DATA_DIR = os.path.join(DATA_DIR, "raw-data")
 PROCESSED_DATA_DIR = os.path.join(DATA_DIR, "processed-data")
 DGP_DIR = os.path.join(RAW_DATA_DIR, "dgp")
 LATTES_DIR = os.path.join(RAW_DATA_DIR, "lattes")
+DOI_URL = "https://citation.doi.org/metadata?doi="
 
 for d in [DATA_DIR, RAW_DATA_DIR, PROCESSED_DATA_DIR, DGP_DIR, LATTES_DIR]:
     os.makedirs(d, exist_ok=True)
