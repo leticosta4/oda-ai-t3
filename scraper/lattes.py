@@ -9,11 +9,11 @@ from scraper.parsers import LattesExtractor
 lattes_url = "https://buscatextual.cnpq.br/buscatextual/busca.do"
 lattes_extractor = LattesExtractor()
 
-def block_aggressively(route):
+async def block_aggressively(route):
     if route.request.resource_type in ["image", "stylesheet", "font", "media"]:
-        route.abort()
+        await route.abort()
     else:
-        route.continue_()
+        await route.continue_()
 
 async def buscar_e_extrair_lattes(context: BrowserContext, page: Page, nome_pesquisador: str, target_lattes_id: str = "") -> bool:
     try:
