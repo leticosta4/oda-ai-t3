@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Query,
 } from '@nestjs/common';
+import type { UUID } from "node:crypto";
 import { ProducoesService } from './producoes.service';
 import { CreateProducoeDto } from './dto/create-producoe.dto';
 import { UpdateProducoeDto } from './dto/update-producoe.dto';
