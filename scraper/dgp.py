@@ -24,12 +24,16 @@ async def scrape_group_page(context: BrowserContext, page: Page, dgp_id: str):
     response = None
     for attempt in range(3):
         try:
-            response = await page.goto(url_alvo, timeout=60000, wait_until="domcontentloaded")
+            response = await page.goto(
+                url_alvo, timeout=60000, wait_until="domcontentloaded"
+            )
             break
         except Exception as e:
             if attempt == 2:
                 raise e
-            print(f"[Scraper] Tentativa {attempt + 1} falhou para {dgp_id}: {str(e)}. Retentando em 5 segundos...")
+            print(
+                f"[Scraper] Tentativa {attempt + 1} falhou para {dgp_id}: {str(e)}. Retentando em 5 segundos..."
+            )
             await asyncio.sleep(5)
 
     if response and response.status == 429:
