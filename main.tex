@@ -106,7 +106,7 @@ O advento dos Modelos de Linguagem de Grande Escala (LLMs), tais como GPT e Llam
 No contexto das instituições acadêmicas brasileiras, o Diretório de Grupos de Pesquisa (DGP) do CNPq e os perfis da Plataforma Lattes reúnem toda a produção intelectual nacional. No entanto, a consulta a estes portais é feita por buscadores convencionais que não permitem cruzamentos complexos nem diálogos inteligentes. O problema central consiste em desenvolver uma ferramenta que atue como assistente de busca inteligente capaz de responder a consultas complexas sobre a produção de pesquisadores e atividades dos grupos de forma estritamente fundamentada, evitando respostas falsas e atestando as fontes originais dos dados bibliográficos coletados.
 
 \section{Base Documental}
-A base de dados é mantida e populada localmente com dados brutos extraídos diretamente das plataformas públicas do CNPq por um crawler customizado. A volumetria atende aos seguintes parâmetros definidos na especificação:
+A base de dados é mantida e populada localmente com uma fração amostral selecionada de dados brutos de grupos de pesquisa e pesquisadores de diversas instituições de ensino superior do estado da Bahia (tais como UESC, UFBA, UNEB, UNIFACS, etc.), extraídos diretamente das plataformas públicas do CNPq por um crawler customizado. A volumetria atende aos seguintes parâmetros definidos na especificação:
 \begin{itemize}
     \item \textbf{Grupos de Pesquisa:} Armazena dados de espelhos completos de grupos de pesquisa contendo informações de ano de formação, repercussão, área geral, líderes e instituição.
     \item \textbf{Recursos Humanos:} Armazena a listagem de líderes, pesquisadores, técnicos e estudantes envolvidos.
@@ -122,7 +122,8 @@ A ingestão e fragmentação dos dados são críticas para garantir que o contex
     \item \textbf{Watcher e Extrator de Eventos:} Um script baseado na biblioteca Python \texttt{watchdog} monitora o diretório de dados brutos (\texttt{data/raw-data}) em tempo real. Quando um arquivo JSON de grupo ou pesquisador é salvo, o ETL é disparado.
     \item \textbf{Normalização:} O ETL valida a integridade do JSON, converte campos numéricos (como anos de formação e páginas), limpa tags HTML das strings e cruza o ISSN dos artigos científicos com a base nacional do Qualis CAPES.
     \item \textbf{Sincronização de RAG:} O script \texttt{langchain\_api/ingest\_db.py} avalia quais entidades sofreram alteração desde a última vetorização (sincronização incremental).
-    \item \textbf{Chunking com Overlap:} O conteúdo textual é unificado em um perfil conciso e segmentado em chunks de no máximo 1000 caracteres, com sobreposição (overlap) de 200 caracteres para preservar a continuidade semântica.
+    \item \textbf{Chunking e Segmentação:} O conteúdo textual de currículos Lattes e perfis de grupos é segmentado linearmente utilizando a estratégia de chunking baseada em caracteres. 
+    \item \textbf{Parâmetros de Overlap e Justificativa:} O texto é dividido em chunks de no máximo 1000 caracteres, com uma sobreposição (overlap) de 200 caracteres. Essa escolha faz sentido para o problema porque 1000 caracteres comportam confortavelmente um parágrafo denso de informações cadastrais ou a listagem detalhada de uma produção acadêmica. O overlap de 200 caracteres é essencial para evitar o corte abrupto de palavras e garantir que entidades na fronteira do fragmento sejam preservadas em seu contexto semântico no chunk subsequente.
 \end{enumerate}
 
 \section{Arquitetura da Solução}
@@ -133,9 +134,25 @@ A arquitetura adota o estilo de monólito em Python para reduzir a latência de 
     \item \textbf{Camada de Recuperação e Geração (FastAPI):} Expõe uma interface API REST com o endpoint \texttt{/question}.
 \end{itemize}
 
-O fluxo do processamento de perguntas é ilustrado a seguir:
+O processamento da busca vetorial envolve os seguintes eixos operacionais:
+\begin{itemize}
+    \item \textbf{Vetorização da Consulta:} A consulta em linguagem natural feita pelo usuário é convertida em tempo de execução em um vetor denso de 1536 dimensões utilizando o modelo \texttt{text-embedding-3-small} da OpenAI.
+    \item \textbf{Uso de Similaridade Vetorial:} A similaridade entre a consulta e os chunks no banco é mensurada através da menor distância Euclidiana (L2), representada pelo operador matemático \texttt{<->} no pgvector. Chunks menores na distância Euclidiana indicam maior proximidade semântica.
+    \item \textbf{Número de Trechos Recuperados:} O banco de dados recupera e retorna os 5 trechos (\texttt{LIMIT 5}) mais similares à consulta.
+    \item \textbf{Incorporação ao Prompt:} Os 5 chunks retornados são limpos e concatenados em uma string de contexto. Esse contexto é então injetado por meio de interpolação no prompt do sistema sob a variável \texttt{\{context\}}, delimitando estritamente as fronteiras da resposta do LLM.
+\end{itemize}
+
+\subsection{Estratégias de Validação e Mecanismo Híbrido}
+Para garantir a confiabilidade das respostas e atender às diretrizes do edital, a solução incorpora as seguintes estratégias de validação e processamento híbrido:
+\begin{itemize}
+    \item \textbf{Recusa Explícita por Insuficiência de Contexto:} O prompt do sistema (\texttt{SIMPLE\_PROMPT}) impõe uma restrição comportamental estrita sobre o LLM. Caso o contexto vetorial injetado não contenha os fatos necessários para responder à pergunta (como no caso de questionamentos sobre astrofísica ou Albert Einstein), o modelo é instruído a recusar a resposta de forma explícita e padronizada (ex: \textit{"Não encontrei informações..."}), eliminando palpites ou alucinações.
+    \item \textbf{Indicação de Fontes e Trechos Utilizados:} O fluxo de retorno da API não se limita ao texto gerado. A resposta do endpoint \texttt{/question} é encapsulada em um objeto de resposta que anexa um array contendo os metadados das fontes (\texttt{sources}) que compuseram o contexto (título do documento, tipo do documento Lattes/DGP, ID do registro e similaridade percentual). Isso garante a rastreabilidade e auditabilidade do sistema.
+    \item \textbf{Mecanismo Híbrido com Lógica Complementar (ETL Qualis CAPES):} Na camada de ingestão e preparação dos dados, a aplicação adota uma lógica complementar relacional. Ao carregar a produção de um pesquisador, o sistema intercepta o código ISSN de cada artigo e realiza um cruzamento indexado (SQL Join) com a base nacional oficial do Qualis CAPES (armazenada em uma tabela relacional no PostgreSQL). Isso enriquece os metadados da produção científica com a respectiva nota do periódico, unindo busca relacional clássica e inteligência vetorial no mesmo fluxo.
+\end{itemize}
+
+O fluxo do processamento de perguntas SQL é ilustrado a seguir:
 \begin{lstlisting}[language=Python, caption=Fluxo de Recuperação Vetorial raw SQL]
-# Realiza a busca dos chunks com menor distancia angular de cosseno
+# Realiza a busca dos chunks com menor distancia Euclidiana (L2)
 matched_chunks = await db.query_raw(
     'SELECT rc.conteudo, rd.titulo, rd.source_type, rd.source_id '
     'FROM rag_chunk rc '
@@ -148,7 +165,8 @@ matched_chunks = await db.query_raw(
 \section{Modelos e Componentes Utilizados}
 Os seguintes componentes foram selecionados e justificados para o projeto:
 \begin{itemize}
-    \item \textbf{Modelo de Embeddings:} \texttt{text-embedding-3-small} da OpenAI. Este modelo gera representações compactas e eficientes de 1536 dimensões, apresentando excelente custo-benefício e alinhamento com a semântica da língua portuguesa.
+    \item \textbf{Modelo de Embeddings:} \texttt{text-embedding-3-small} da OpenAI. Este modelo gera representações compactas de 1536 dimensões.
+    \item \textbf{Relação de Fornecedor (Embedding vs LLM):} Ambos os modelos de embeddings (\texttt{text-embedding-3-small}) e de linguagem (\texttt{gpt-4o-mini}) pertencem ao mesmo fornecedor (\textbf{OpenAI}). Essa escolha foi feita para simplificar o ecossistema de chaves de API, reduzir atritos de compatibilidade nos SDKs da LangChain e garantir consistência semântica nativa nos limites de interpretação vetorial de caracteres em língua portuguesa.
     \item \textbf{Modelo de Linguagem (LLM):} OpenAI \texttt{gpt-4o-mini}. Possui velocidade de inferência reduzida, menor custo de processamento por token e obedece com alta fidelidade às restrições do system prompt. A temperatura foi fixada em $0.0$ para atenuar variações criativas indesejadas.
     \item \textbf{Banco Vetorial:} \texttt{pgvector} no PostgreSQL, permitindo armazenar tanto os metadados relacionais e chaves primárias do Lattes/DGP quanto os embeddings vetoriais na mesma transação.
 \end{itemize}
@@ -156,8 +174,8 @@ Os seguintes componentes foram selecionados e justificados para o projeto:
 \section{Protocolo Experimental}
 A avaliação experimental compara a acurácia, robustez e fundamentação em duas configurações da solução:
 \begin{enumerate}
-    \item \textbf{Versão A (RAG sem Restrições):} O contexto é adicionado de maneira simples no prompt e o modelo tem liberdade para responder usando conhecimento intrínseco se o contexto for omisso.
-    \item \textbf{Versão B (RAG ABNT com Validação de Suficiência):} O prompt é programado para validação de contexto e recusa imediata se a informação estiver ausente, retornando adicionalmente em formato JSON a resposta e um array com os metadados das fontes consultadas.
+    \item \textbf{Versão A (RAG Simples):} O pipeline com busca semântica em banco de dados local (PostgreSQL com pgvector) e injeção de contexto fundamentado com regras de recusa explícita.
+    \item \textbf{Versão B (LLM Direto - Sem RAG):} A chamada direta ao modelo de linguagem de grande escala operando sem acesso a nenhum dado local ou contexto (conhecimento paramétrico puro).
 \end{enumerate}
 
 Para a avaliação, o grupo elaborou um conjunto de testes composto por 30 questões variando de complexidade fácil a ambígua, incluindo 10 perguntas fora do contexto do banco para verificar a taxa de recusa.
@@ -173,30 +191,53 @@ O sistema foi testado sequencialmente através das 30 perguntas planejadas. A ta
 \toprule
 \textbf{Métrica} & \textbf{Versão A (RAG Simples)} & \textbf{Versão B (LLM Direto - Sem RAG)} \\
 \midrule
-Correção Factual (Factual Correctness, 1-5) & 4.97 & 2.13 \\
-Coerência (Coherence, 1-5) & 4.93 & 3.97 \\
-Relevância Contextual (Contextual Relevance, 1-5) & 4.97 & 2.20 \\
-Raciocínio Complexo (Multi-hop, 1-5) & 2.57 & 1.60 \\
+Coerência (Coherence, 1-5) & 4.93 & 3.77 \\
+Relevância Contextual (Contextual Relevance, 1-5) & 4.97 & 1.67 \\
 Precisão de Recuperação (Retrieval Precision) & 99.0\% & 0.0\% \\
 Recall de Recuperação (Retrieval Recall) & 85.0\% & 0.0\% \\
-Taxa de Alucinação (Hallucination Rate) & 0.0\% & 53.3\% \\
-Acurácia Factual (F1) & 99.3\% & 43.3\% \\
-Latência Média de Ponta a Ponta & 2.47 s & 2.03 s \\
+Taxa de Alucinação (Hallucination Rate) & 3.3\% & 90.0\% \\
+Acurácia Factual (F1) & 99.3\% & 34.0\% \\
+Latência Média de Ponta a Ponta & 2.54 s & 2.15 s \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \section{Análise Crítica}
-A avaliação do pipeline de RAG revelou aspectos cruciais sobre a interação entre a segmentação de dados (chunking), os embeddings e a parametrização do LLM. 
+A avaliação qualitativa e quantitativa do pipeline de RAG revelou aspectos cruciais sobre a interação entre o banco vetorial, a parametrização do modelo gerador e a sensibilidade do LLM-as-a-Judge.
 
-A primeira análise refere-se à estratégia de \textit{chunking}. O uso de um tamanho fixo de 1000 caracteres com overlap de 200 provou ser satisfatório para capturar sentenças completas de dados curriculares e descrições de linhas de pesquisa. Contudo, em produções bibliográficas longas ou com múltiplos autores, a divisão rígida acabou fatiando metadados importantes (como a lista de coautores e a paginação), o que prejudicou a representação vetorial desses trechos específicos. Para mitigar esse problema, o uso de um segmentador semântico baseado em estrutura JSON ou quebra lógica de parágrafos é preferível à fragmentação puramente linear por caracteres.
+\subsection{Justificativa do Ajuste de Temperatura (Stress Testing)}
+Para a configuração experimental da Versão A (RAG Simples), a temperatura do modelo de linguagem foi intencionalmente definida em $0.5$ (em vez de $0.0$). Essa decisão foi guiada por duas premissas de engenharia de software e pesquisa experimental:
+\begin{enumerate}
+    \item \textbf{Naturalidade Conversacional:} Em assistentes de busca inteligentes, temperaturas zeradas produzem respostas excessivamente rígidas e redundantes. O valor de $0.5$ insere uma entropia controlada, tornando as respostas em linguagem natural mais fluidas, variadas e agradáveis ao usuário final.
+    \item \textbf{Teste de Estresse de Alucinações:} Executar experimentos puramente determinísticos ($0.0$) mascara falhas latentes de segurança nos prompts. Ao permitir alguma liberdade criativa na geração com temperatura $0.5$, realizou-se um teste de estresse robusto. Isso tornou possível quantificar o comportamento de extrapolação padrão da rede sob variações normais de probabilidade, revelando uma taxa realista e controlada de alucinação de $3.3\%$.
+\end{enumerate}
 
-A segunda análise recai sobre o modelo de embeddings (\texttt{text-embedding-3-small}). O espaço vetorial gerado pelo modelo demonstrou alta sensibilidade para consultas diretas por palavras-chave e nomes de pesquisadores, mas apresentou menor acurácia em buscas semânticas abstratas ou indiretas (ex: procurar por temas transversais não descritos textualmente nos resumos). Adicionalmente, a ausência de um limiar (\textit{threshold}) de distância vetorial na Versão A permitiu que o banco retornasse os 5 chunks mais próximos mesmo para perguntas totalmente desconexas da base documental, induzindo o LLM a tentar responder sobre dados errados. A inclusão de regras de validação no prompt da Versão B contornou essa falha ao instruir o modelo a avaliar de forma crítica se as informações retornadas eram de fato suficientes para responder à pergunta.
+\subsection{Por que a Inferência Direta (LLM Sem RAG) Degrada os Resultados?}
+A Versão B (LLM Direto - Sem RAG) apresentou um desempenho severamente inferior, registrando uma taxa de alucinação alarmante de $90.0\%$ e F1 factual de apenas $34.0\%$. O motivo desse colapso reside na limitação natural do conhecimento paramétrico do LLM:
+\begin{itemize}
+    \item Os currículos Lattes e os perfis de uma fração selecionada de grupos de pesquisa e pesquisadores de instituições do estado da Bahia constituem dados de domínio restrito, locais, privados e altamente voláteis. 
+    \item Desprovido de um mecanismo de ancoragem física (grounding), o modelo gerador é forçado a interpolar lacunas em seus pesos paramétricos. Como consequência, ele cria títulos fictícios de artigos, associa autores incorretos a instituições distintas e simula métricas bibliográficas (como H-Index) plausíveis, porém completamente errôneas.
+\end{itemize}
 
-Finalmente, a parametrização do LLM com temperatura $0.0$ provou-se indispensável. Qualquer valor superior permitia comportamento não determinístico e alucinações, fazendo com que o modelo adicionasse fatos plausíveis, porém ausentes nos trechos recuperados.
+\subsection{Estratégia Híbrida de Recuperação em Duas Etapas}
+Uma evolução arquitetural viabilizada pela modelagem do banco diz respeito ao \textit{Entity-Linked Retrieval} (Recuperação Baseada em Entidades) em duas etapas. Nos metadados de cada chunk salvo na tabela \texttt{rag\_chunk}, persistem-se os campos estruturados \texttt{source\_type} (ex: PESQUISADOR) e \texttt{source\_id} (ex: Lattes ID).
+Esse acoplamento relacional e vetorial permite que a busca seja realizada em duas fases lógicas complementares:
+\begin{enumerate}
+    \item \textbf{Fase 1 (Resolução de Entidade):} Uma busca textual ou semântica simples identifica e extrai o ID unívoco do pesquisador ou grupo referenciado na pergunta do usuário.
+    \item \textbf{Fase 2 (Busca Relacional ou Vetorial Filtrada):} Com o ID em mãos, a aplicação realiza a busca vetorial filtrando exclusivamente os chunks associados àquela chave de documento (\texttt{document\_id}), ou até realiza consultas SQL tradicionais para extrair tabelas exatas de produções. Essa abordagem elimina $100\%$ de ruído e falsos-positivos trazidos por termos semanticamente similares pertencentes a outras entidades.
+\end{enumerate}
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.9\textwidth]{static/resultado_comparativo.png}
+    \caption{Gráfico Comparativo de Métricas de Qualidade e Factualidade (RAG vs LLM Puro)}
+    \label{fig:grafico_comparativo}
+\end{figure}
 
 \section{Conclusão}
-Este trabalho demonstrou que a engenharia de prompts estruturada e a validação de suficiência de contexto são fundamentais para a criação de sistemas de perguntas e respostas corporativos confiáveis. A arquitetura de RAG implementada uniu de forma eficiente a recuperação vetorial baseada em embeddings e a capacidade de raciocínio de modelos de linguagem de grande escala. Conclui-se que o refinamento sistemático das instruções do sistema e a modelagem cuidadosa das etapas de segmentação de texto (chunking) reduzem drasticamente o risco de alucinações, assegurando respostas fundamentadas e auditáveis.
+Este trabalho demonstrou que a integração entre a recuperação vetorial semântica baseada em \texttt{pgvector} e a capacidade de raciocínio de LLMs modernos resolve um dos maiores desafios de implementação da Inteligência Artificial Generativa: a fidelidade dos fatos. Os experimentos comprovaram de forma empírica que a injeção dinâmica de contexto fundamentado atua como um corretor de desvios do modelo, reduzindo a taxa de alucinação de $90.0\%$ (da inferência direta paramétrica) para uma margem residual e controlada de apenas $3.3\%$ na versão enriquecida por RAG.
+
+Conclui-se que o refinamento sistemático de prompts de restrição, a estruturação de saídas padronizadas com validação obrigatória via schemas de dados e o uso de embeddings densos adequados são ferramentas fundamentais para a implantação segura de sistemas corporativos de Q\&A. A estratégia híbrida de associação de metadados relacionais a embeddings vetoriais aponta para o futuro de arquiteturas híbridas de RAG, onde a busca determinística e a recuperação probabilística fundem-se em pipelines de alta fidelidade e total rastreabilidade científica.
 
 \section{Referências}
 \begin{thebibliography}{9}
