@@ -75,7 +75,7 @@ async def ask_question_simple(question: str, chat_history: str = "") -> dict:
             "question": RunnablePassthrough(),
         }
         | SIMPLE_PROMPT
-        | model
+        | model.bind(temperature=0.5)
         | StrOutputParser()
     )
     
