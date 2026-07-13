@@ -1,6 +1,46 @@
-# Open DGP - Monólito (Python)
+# Open DGP — Sistema de Busca Semântica para Grupos de Pesquisa do CNPq/DGP
 
-Sistema completo e unificado em Python para extração, processamento, estruturação, busca semântica (RAG) e análise de grupos de pesquisa do CNPq/DGP.
+Pipeline completo em Python para extração, estruturação, indexação vetorial e busca semântica (RAG) de grupos de pesquisa do **CNPq/DGP** e dados do **Currículo Lattes**, com foco em instituições baianas.
+
+---
+
+## Arquitetura e Técnicas
+
+### Pipeline de Dados
+
+```
+Scraper (DGP + Lattes) → ETL (estruturação + enriquecimento) → LangChain API (indexação vetorial + RAG)
+```
+
+1. **Scraper** — Coleta dados públicos do DGP (grupos de pesquisa) e do Currículo Lattes via Playwright + BeautifulSoup, armazenando em fila de extração e JSONs brutos.
+2. **ETL** — Processa os JSONs, povoa o banco relacional (Prisma ORM + PostgreSQL) e enriquece metadados por CrossRef, OpenAlex e Qualis CAPES.
+3. **LangChain API** — Indexa os dados vetorialmente e expõe endpoints de perguntas semânticas (RAG) via FastAPI.
+
+### Indexação Vetorial
+
+- **Modelo de embedding**: `text-embedding-3-small` (OpenAI) — vetores de **1536 dimensões**
+- **Chunking**: 1000 caracteres com 200 de overlap, quebra inteligente em newlines/espaços
+- **Armazenamento**: extensão **pgvector** no PostgreSQL (coluna `vector(1536)`)
+- **Indexação incremental**: apenas documentos novos ou atualizados são (re)vetorizados
+
+### Abordagens de RAG Implementadas
+
+| Versão | Técnica | Descrição |
+|--------|---------|-----------|
+| **A — RAG Simples** (`/question-simple`) | Busca vetorial + prompt direto | Top-5 chunks por distância L2 → contexto concatenado → GPT-4o-mini responde. Foco em alto recall. |
+| **B — Self-RAG** (`/question-hybrid`, implementado mas não exposto) | Busca + auto-reflexão em JSON mode | Mesma busca, mas o LLM avalia relevância de cada chunk, gera rascunho, faz auto-crítica contra alucinações e só então responde. |
+| **C — LLM Direto / NoRAG** (`/question-norag`) | Apenas LLM, sem contexto | Consulta o GPT-4o-mini sem nenhum contexto externo. **Baseline** para comparação. |
+
+### Resultados Experimentais (LLM-as-a-Judge — 30 perguntas)
+
+| Métrica | RAG Simples | LLM Direto |
+|---|---|---|
+| **Acurácia factual (F1)** | **99,3%** | 34,0% |
+| **Taxa de alucinação** | **3,3%** | 90,0% |
+| **Recall de recuperação** | **85,0%** | 0,0% |
+| **Latência média** | 2,54s | 2,15s |
+
+> Relatório completo em [`resultados_testes.md`](resultados_testes.md).
 
 ---
 
