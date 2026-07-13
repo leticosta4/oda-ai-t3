@@ -37,6 +37,15 @@ Para subir o banco de dados PostgreSQL com pgvector:
 docker compose up -d postgres
 ```
 
+### 5. Restaurar Banco a partir do Backup (Alternativa ao Scraper)
+Se você não quiser executar o scraper (que pode levar horas), utilize o dump fornecido em `backup.sql` para popular o banco com dados já coletados:
+
+```bash
+./restore-db.sh
+```
+
+O script verifica automaticamente se o container `postgres` está rodando e se o banco já contém dados — se estiver vazio, executa o `pg_restore`; caso contrário, ignora para evitar conflitos.
+
 ---
 
 ## Executando os Serviços e Scripts
@@ -105,4 +114,9 @@ Serviço REST em FastAPI para perguntas semânticas, resumos e indexação vetor
 Se desejar rodar o banco de dados e o serviço FastAPI do LangChain unificados:
 ```bash
 docker compose up --build -d
+```
+
+Após subir, certifique-se de restaurar o banco (se estiver vazio):
+```bash
+./restore-db.sh
 ```
