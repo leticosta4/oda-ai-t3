@@ -2,7 +2,7 @@ import json
 import uuid
 import re
 from db.client import db
-from langchain_api.config import embeddings, model, ANSWER_PROMPT, SUMMARIZE_PROMPT, SELF_RAG_PROMPT, SIMPLE_PROMPT, NORAG_PROMPT
+from langchain_api.config import embeddings, model, ANSWER_PROMPT, SUMMARIZE_PROMPT, SELF_RAG_PROMPT, NORAG_PROMPT
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
@@ -74,7 +74,7 @@ async def ask_question_simple(question: str, chat_history: str = "") -> dict:
             "context": lambda x: context,
             "question": RunnablePassthrough(),
         }
-        | SIMPLE_PROMPT
+        | ANSWER_PROMPT
         | model.bind(temperature=0.5)
         | StrOutputParser()
     )

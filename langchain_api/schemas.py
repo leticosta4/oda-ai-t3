@@ -1,5 +1,18 @@
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+
+
+class SourceInfo(BaseModel):
+    title: Optional[str] = None
+    sourceType: Optional[str] = None
+    sourceId: Optional[str] = None
+    similarity: Optional[str] = None
+
+
+class QuestionResponse(BaseModel):
+    answer: str
+    sources: List[SourceInfo]
+
 
 class QuestionRequest(BaseModel):
     question: str
