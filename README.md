@@ -28,8 +28,7 @@ Scraper (DGP + Lattes) → ETL (estruturação + enriquecimento) → LangChain A
 | Versão | Endpoint | Técnica | Descrição |
 |--------|----------|---------|-----------|
 | **A — RAG Simples** | `/question-simple` | Busca vetorial + prompt direto | Top-5 chunks por distância L2 → contexto concatenado → GPT-4o-mini responde com regras de recusa e listagem obrigatória. |
-| **B — Self-RAG** | `/question-hybrid` | Busca + auto-reflexão em JSON mode | Mesma busca, mas o LLM avalia relevância de cada chunk, gera rascunho, faz auto-crítica contra alucinações e só então responde. |
-| **C — LLM Direto / NoRAG** | `/question-norag` | Apenas LLM, sem contexto | Consulta o GPT-4o-mini sem nenhum contexto externo. **Baseline** para comparação. |
+| **B — LLM Direto / NoRAG** | `/question-norag` | Apenas LLM, sem contexto | Consulta o GPT-4o-mini sem nenhum contexto externo. **Baseline** para comparação. |
 
 ### Resultados Experimentais (LLM-as-a-Judge — 30 perguntas)
 
