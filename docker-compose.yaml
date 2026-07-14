@@ -12,24 +12,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  langchain:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ia-t3-rag
-    restart: always
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - OPEN_AI_KEY=${OPEN_AI_KEY}
-      - LANGCHAIN_PORT=8002
-    ports:
-      - "8002:8002"
-    depends_on:
-      - postgres
+      - postgres_data:/var/lib/postgresql
 
 volumes:
   postgres_data:

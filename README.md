@@ -70,13 +70,14 @@ docker compose up -d postgres
 ```
 
 ### 5. Restaurar Banco a partir do Backup (Alternativa ao Scraper)
-Se você não quiser executar o scraper (que pode levar horas), utilize o dump fornecido em `backup.sql` para popular o banco com dados já coletados:
+Se você não quiser executar o scraper (que pode levar horas), utilize o dump fornecido em `backup.sql` para popular o banco com os dados coletados. 
+
+Substitua `<POSTGRES_USER>` e `<POSTGRES_DB>` pelos valores definidos no seu arquivo `.env` (ex: `POSTGRES_USER` e `POSTGRES_DB` da sua configuração):
 
 ```bash
-./restore-db.sh
+docker cp backup.sql ia-t3:/tmp/backup.sql
+docker exec ia-t3 pg_restore -U <POSTGRES_USER> -d <POSTGRES_DB> /tmp/backup.sql
 ```
-
-O script verifica automaticamente se o container `postgres` está rodando e se o banco já contém dados — se estiver vazio, executa o `pg_restore`; caso contrário, ignora para evitar conflitos.
 
 ---
 
@@ -165,5 +166,6 @@ docker compose up --build -d
 
 Após subir, certifique-se de restaurar o banco (se estiver vazio):
 ```bash
-./restore-db.sh
+docker cp backup.sql ia-t3:/tmp/backup.sql
+docker exec ia-t3 pg_restore -U <POSTGRES_USER> -d <POSTGRES_DB> /tmp/backup.sql
 ```
