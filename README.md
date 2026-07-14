@@ -32,14 +32,7 @@ Scraper (DGP + Lattes) → ETL (estruturação + enriquecimento) → LangChain A
 
 ### Resultados Experimentais (LLM-as-a-Judge — 30 perguntas)
 
-| Métrica | RAG Simples | LLM Direto |
-|---|---|---|
-| **Acurácia factual (F1)** | **99,3%** | 34,0% |
-| **Taxa de alucinação** | **3,3%** | 90,0% |
-| **Recall de recuperação** | **85,0%** | 0,0% |
-| **Latência média** | 2,54s | 2,15s |
-
-> Relatório completo em [`resultados_testes.md`](resultados_testes.md). Para reproduzir, execute `python eval_rag.py`.
+> Relatório completo em [`resultados_testes.md`](resultados_testes.md). Para reproduzir, execute `python run_experiments.py` e depois `python evaluate_results.py`.
 
 ---
 
