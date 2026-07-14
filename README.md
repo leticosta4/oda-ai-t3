@@ -25,11 +25,11 @@ Scraper (DGP + Lattes) → ETL (estruturação + enriquecimento) → LangChain A
 
 ### Abordagens de RAG Implementadas
 
-| Versão | Técnica | Descrição |
-|--------|---------|-----------|
-| **A — RAG Simples** (`/question-simple`) | Busca vetorial + prompt direto | Top-5 chunks por distância L2 → contexto concatenado → GPT-4o-mini responde. Foco em alto recall. |
-| **B — Self-RAG** (`/question-hybrid`, implementado mas não exposto) | Busca + auto-reflexão em JSON mode | Mesma busca, mas o LLM avalia relevância de cada chunk, gera rascunho, faz auto-crítica contra alucinações e só então responde. |
-| **C — LLM Direto / NoRAG** (`/question-norag`) | Apenas LLM, sem contexto | Consulta o GPT-4o-mini sem nenhum contexto externo. **Baseline** para comparação. |
+| Versão | Endpoint | Técnica | Descrição |
+|--------|----------|---------|-----------|
+| **A — RAG Simples** | `/question-simple` | Busca vetorial + prompt direto | Top-5 chunks por distância L2 → contexto concatenado → GPT-4o-mini responde com regras de recusa e listagem obrigatória. |
+| **B — Self-RAG** | `/question-hybrid` | Busca + auto-reflexão em JSON mode | Mesma busca, mas o LLM avalia relevância de cada chunk, gera rascunho, faz auto-crítica contra alucinações e só então responde. |
+| **C — LLM Direto / NoRAG** | `/question-norag` | Apenas LLM, sem contexto | Consulta o GPT-4o-mini sem nenhum contexto externo. **Baseline** para comparação. |
 
 ### Resultados Experimentais (LLM-as-a-Judge — 30 perguntas)
 
@@ -40,7 +40,7 @@ Scraper (DGP + Lattes) → ETL (estruturação + enriquecimento) → LangChain A
 | **Recall de recuperação** | **85,0%** | 0,0% |
 | **Latência média** | 2,54s | 2,15s |
 
-> Relatório completo em [`resultados_testes.md`](resultados_testes.md).
+> Relatório completo em [`resultados_testes.md`](resultados_testes.md). Para reproduzir, execute `python eval_rag.py`.
 
 ---
 
@@ -147,6 +147,21 @@ Serviço REST em FastAPI para perguntas semânticas, resumos e indexação vetor
   python -m langchain_api.main
   ```
   O serviço FastAPI estará rodando na porta `8002`.
+
+Endpoints disponíveis:
+- `POST /question-simple` — RAG Simples (busca vetorial + `ANSWER_PROMPT` com regras de recusa)
+- `POST /question-norag` — LLM Direto sem contexto (baseline)
+
+### D. Avaliação Reprodutível
+Para reproduzir a tabela de métricas e o relatório em `resultados_testes.md`:
+```bash
+python run_experiments.py
+```
+Em seguida quando o script terminar faça:
+```bash
+python evaluate_results.py
+```
+O script executa as 30 perguntas de teste nos endpoints RAG Simples e NoRAG, avalia cada resposta com **LLM-as-a-Judge** (GPT-4o-mini, temperatura 0) e gera o relatório atualizado.
 
 ---
 

@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from db.client import db
-from langchain_api.schemas import QuestionRequest
+from langchain_api.schemas import QuestionRequest, QuestionResponse
 from langchain_api.services import (
     ask_question_simple,
     ask_question_norag,
@@ -38,7 +38,7 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/question-simple")
+@app.post("/question-simple", response_model=QuestionResponse)
 async def question_simple_endpoint(req: QuestionRequest):
     if not req.question:
         raise HTTPException(status_code=400, detail="Question is required")
@@ -49,7 +49,7 @@ async def question_simple_endpoint(req: QuestionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/question-norag")
+@app.post("/question-norag", response_model=QuestionResponse)
 async def question_norag_endpoint(req: QuestionRequest):
     if not req.question:
         raise HTTPException(status_code=400, detail="Question is required")
