@@ -27,10 +27,10 @@ async def ask_question_simple(question: str, chat_history: str = "") -> dict:
 
     sql_vector = """
         SELECT rc.conteudo, rd.titulo, rd.source_type as "source_type", rd.source_id as "source_id",
-        (rc.embedding <-> $1::vector) as "distance"
+        (rc.embedding <=> $1::vector) as "distance"
         FROM rag_chunk rc
         JOIN rag_document rd ON rc.document_id = rd.id
-        ORDER BY rc.embedding <-> $1::vector ASC LIMIT 5
+        ORDER BY rc.embedding <=> $1::vector ASC LIMIT 5
     """
 
     vector_chunks = []
@@ -55,7 +55,7 @@ async def ask_question_simple(question: str, chat_history: str = "") -> dict:
         if distance is not None:
             try:
                 distance_val = float(distance)
-                similarity = 1.0 - (distance_val**2) / 2.0
+                similarity = 1.0 - distance_val
                 similarity_pct = max(0.0, min(1.0, similarity)) * 100.0
             except Exception:
                 similarity_pct = 0.0
