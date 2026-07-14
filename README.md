@@ -155,6 +155,10 @@ Endpoints disponíveis:
 ### D. Avaliação Reprodutível
 Para reproduzir a tabela de métricas e o relatório em `resultados_testes.md`:
 ```bash
+python run_experiments.py
+```
+Em seguida quando o script terminar faça:
+```bash
 python evaluate_results.py
 ```
 O script executa as 30 perguntas de teste nos endpoints RAG Simples e NoRAG, avalia cada resposta com **LLM-as-a-Judge** (GPT-4o-mini, temperatura 0) e gera o relatório atualizado.
