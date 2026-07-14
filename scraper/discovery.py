@@ -70,7 +70,7 @@ async def run_dgp_discovery(keys: list = ["a", "e", "i", "o", "u"]):
     await normalize_queue_data()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         page = await context.new_page()
 
