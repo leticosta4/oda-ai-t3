@@ -1,6 +1,46 @@
-# Open DGP - Monólito (Python)
+# Open DGP — Sistema de Busca Semântica para Grupos de Pesquisa do CNPq/DGP
 
-Sistema completo e unificado em Python para extração, processamento, estruturação, busca semântica (RAG) e análise de grupos de pesquisa do CNPq/DGP.
+Pipeline completo em Python para extração, estruturação, indexação vetorial e busca semântica (RAG) de grupos de pesquisa do **CNPq/DGP** e dados do **Currículo Lattes**, com foco em instituições baianas.
+
+---
+
+## Arquitetura e Técnicas
+
+### Pipeline de Dados
+
+```
+Scraper (DGP + Lattes) → ETL (estruturação + enriquecimento) → LangChain API (indexação vetorial + RAG)
+```
+
+1. **Scraper** — Coleta dados públicos do DGP (grupos de pesquisa) e do Currículo Lattes via Playwright + BeautifulSoup, armazenando em fila de extração e JSONs brutos.
+2. **ETL** — Processa os JSONs, povoa o banco relacional (Prisma ORM + PostgreSQL) e enriquece metadados por CrossRef, OpenAlex e Qualis CAPES.
+3. **LangChain API** — Indexa os dados vetorialmente e expõe endpoints de perguntas semânticas (RAG) via FastAPI.
+
+### Indexação Vetorial
+
+- **Modelo de embedding**: `text-embedding-3-small` (OpenAI) — vetores de **1536 dimensões**
+- **Chunking**: 1000 caracteres com 200 de overlap, quebra inteligente em newlines/espaços
+- **Armazenamento**: extensão **pgvector** no PostgreSQL (coluna `vector(1536)`)
+- **Indexação incremental**: apenas documentos novos ou atualizados são (re)vetorizados
+
+### Abordagens de RAG Implementadas
+
+| Versão | Endpoint | Técnica | Descrição |
+|--------|----------|---------|-----------|
+| **A — RAG Simples** | `/question-simple` | Busca vetorial + prompt direto | Top-5 chunks por distância L2 → contexto concatenado → GPT-4o-mini responde com regras de recusa e listagem obrigatória. |
+| **B — Self-RAG** | `/question-hybrid` | Busca + auto-reflexão em JSON mode | Mesma busca, mas o LLM avalia relevância de cada chunk, gera rascunho, faz auto-crítica contra alucinações e só então responde. |
+| **C — LLM Direto / NoRAG** | `/question-norag` | Apenas LLM, sem contexto | Consulta o GPT-4o-mini sem nenhum contexto externo. **Baseline** para comparação. |
+
+### Resultados Experimentais (LLM-as-a-Judge — 30 perguntas)
+
+| Métrica | RAG Simples | LLM Direto |
+|---|---|---|
+| **Acurácia factual (F1)** | **99,3%** | 34,0% |
+| **Taxa de alucinação** | **3,3%** | 90,0% |
+| **Recall de recuperação** | **85,0%** | 0,0% |
+| **Latência média** | 2,54s | 2,15s |
+
+> Relatório completo em [`resultados_testes.md`](resultados_testes.md). Para reproduzir, execute `python eval_rag.py`.
 
 ---
 
@@ -36,6 +76,15 @@ Para subir o banco de dados PostgreSQL com pgvector:
 ```bash
 docker compose up -d postgres
 ```
+
+### 5. Restaurar Banco a partir do Backup (Alternativa ao Scraper)
+Se você não quiser executar o scraper (que pode levar horas), utilize o dump fornecido em `backup.sql` para popular o banco com dados já coletados:
+
+```bash
+./restore-db.sh
+```
+
+O script verifica automaticamente se o container `postgres` está rodando e se o banco já contém dados — se estiver vazio, executa o `pg_restore`; caso contrário, ignora para evitar conflitos.
 
 ---
 
@@ -99,10 +148,26 @@ Serviço REST em FastAPI para perguntas semânticas, resumos e indexação vetor
   ```
   O serviço FastAPI estará rodando na porta `8002`.
 
+Endpoints disponíveis:
+- `POST /question-simple` — RAG Simples (busca vetorial + `ANSWER_PROMPT` com regras de recusa)
+- `POST /question-norag` — LLM Direto sem contexto (baseline)
+
+### D. Avaliação Reprodutível
+Para reproduzir a tabela de métricas e o relatório em `resultados_testes.md`:
+```bash
+python evaluate_results.py
+```
+O script executa as 30 perguntas de teste nos endpoints RAG Simples e NoRAG, avalia cada resposta com **LLM-as-a-Judge** (GPT-4o-mini, temperatura 0) e gera o relatório atualizado.
+
 ---
 
 ## 🐳 Executando com Docker Compose (Modo Produção)
 Se desejar rodar o banco de dados e o serviço FastAPI do LangChain unificados:
 ```bash
 docker compose up --build -d
+```
+
+Após subir, certifique-se de restaurar o banco (se estiver vazio):
+```bash
+./restore-db.sh
 ```
