@@ -150,13 +150,12 @@ Serviço REST em FastAPI para perguntas semânticas, resumos e indexação vetor
 
 Endpoints disponíveis:
 - `POST /question-simple` — RAG Simples (busca vetorial + `ANSWER_PROMPT` com regras de recusa)
-- `POST /question-hybrid` — Self-RAG (busca + auto-reflexão em JSON mode)
 - `POST /question-norag` — LLM Direto sem contexto (baseline)
 
 ### D. Avaliação Reprodutível
 Para reproduzir a tabela de métricas e o relatório em `resultados_testes.md`:
 ```bash
-python eval_rag.py
+python evaluate_results.py
 ```
 O script executa as 30 perguntas de teste nos endpoints RAG Simples e NoRAG, avalia cada resposta com **LLM-as-a-Judge** (GPT-4o-mini, temperatura 0) e gera o relatório atualizado.
 
