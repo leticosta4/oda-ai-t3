@@ -10,7 +10,6 @@ from langchain_api.schemas import QuestionRequest, QuestionResponse
 from langchain_api.services import (
     ask_question_simple,
     ask_question_norag,
-    ask_question_hybrid,
 )
 
 app = FastAPI(title="LangChain Python Service")
@@ -45,17 +44,6 @@ async def question_simple_endpoint(req: QuestionRequest):
         raise HTTPException(status_code=400, detail="Question is required")
     try:
         ans = await ask_question_simple(req.question, req.chatHistory)
-        return ans
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/question-hybrid", response_model=QuestionResponse)
-async def question_hybrid_endpoint(req: QuestionRequest):
-    if not req.question:
-        raise HTTPException(status_code=400, detail="Question is required")
-    try:
-        ans = await ask_question_hybrid(req.question, req.chatHistory)
         return ans
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
